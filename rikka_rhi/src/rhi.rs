@@ -10,16 +10,25 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::*;
 use crate::{
+    device::Device,
     physical_device::PhysicalDevice,
-    queue::{QueueFamily, QueueFamilyIndices},
+    queue::{Queue, QueueFamily, QueueFamilyIndices},
     surface::Surface,
+    synchronization::{Semaphore, SemaphoreType},
 };
 
 pub struct RHI {
+    allocator: Arc<Mutex<Allocator>>,
+    graphics_queue: Queue,
+    present_queue: Queue,
+    compute_queue: Queue,
+    transfer_queue: Queue,
+
+    device: Arc<Device>,
+    queue_families: QueueFamilyIndices,
+
     surface: Surface,
     instance: Instance,
-
-    queue_families: QueueFamilyIndices,
 
     entry: ash::Entry,
 }
@@ -59,11 +68,52 @@ impl RHI {
         println!("Compute family: {}", queue_families.compute.index());
         println!("Transfer family: {}", queue_families.transfer.index());
 
+        let queue_families_array = [
+            queue_families.graphics,
+            queue_families.compute,
+            queue_families.transfer,
+            queue_families.compute,
+        ];
+
+        let device = Arc::new(Device::new(
+            &instance,
+            &physical_device,
+            &queue_families_array,
+        )?);
+
+        let graphics_queue = device.get_queue(queue_families.graphics, 0);
+        let present_queue = device.get_queue(queue_families.present, 0);
+        let compute_queue = device.get_queue(queue_families.compute, 0);
+        let transfer_queue = device.get_queue(queue_families.transfer, 0);
+
+        let allocator = Allocator::new(&AllocatorCreateDesc {
+            instance: instance.raw_clone(),
+            device: device.raw_clone(),
+            physical_device: physical_device.raw_clone(),
+            debug_settings: AllocatorDebugSettings {
+                log_memory_information: true,
+                log_leaks_on_shutdown: true,
+                ..Default::default()
+            },
+            buffer_device_address: true,
+        })?;
+        let allocator = Arc::new(Mutex::new(allocator));
+
+        let test_sem = Semaphore::new(&device, SemaphoreType::Timeline)?;
+
         Ok(Self {
             surface,
             instance,
             entry,
             queue_families,
+            device,
+
+            graphics_queue,
+            present_queue,
+            compute_queue,
+            transfer_queue,
+
+            allocator,
         })
     }
 

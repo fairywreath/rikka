@@ -4,7 +4,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::instance::Instance;
 
-pub(crate) struct Surface {
+pub struct Surface {
     ash_surface: khr::Surface,
     vulkan_surface: vk::SurfaceKHR,
 }
@@ -16,11 +16,11 @@ impl Surface {
         window_handle: &dyn HasRawWindowHandle,
         display_handle: &dyn HasRawDisplayHandle,
     ) -> Result<Self> {
-        let ash_surface = khr::Surface::new(entry, &instance.instance());
+        let ash_surface = khr::Surface::new(entry, &instance.raw());
         let vulkan_surface = unsafe {
             ash_window::create_surface(
                 entry,
-                &instance.instance(),
+                &instance.raw(),
                 display_handle.raw_display_handle(),
                 window_handle.raw_window_handle(),
                 None,

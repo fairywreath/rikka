@@ -2,9 +2,11 @@ pub use ash;
 
 mod barriers;
 mod buffer;
+mod command_buffer;
 mod deletion_queue;
 mod descriptor_set;
 mod device;
+mod frame;
 mod graphics_pipeline;
 mod instance;
 mod physical_device;

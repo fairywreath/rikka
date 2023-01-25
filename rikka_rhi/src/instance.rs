@@ -9,7 +9,7 @@ use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{physical_device::PhysicalDevice, surface::Surface};
 
-pub(crate) struct Instance {
+pub struct Instance {
     instance: ash::Instance,
     debug_utils: DebugUtils,
     debug_utils_messenger: vk::DebugUtilsMessengerEXT,
@@ -77,8 +77,12 @@ impl Instance {
         })
     }
 
-    pub fn instance(&self) -> &ash::Instance {
+    pub fn raw(&self) -> &ash::Instance {
         &self.instance
+    }
+
+    pub fn raw_clone(&self) -> ash::Instance {
+        self.instance.clone()
     }
 
     pub fn get_physical_devices(&mut self, surface: &Surface) -> Result<&Vec<PhysicalDevice>> {
@@ -129,7 +133,7 @@ pub unsafe extern "system" fn vulkan_debug_utils_callback(
         _ => "[Unknown]",
     };
     let message = CStr::from_ptr((*p_callback_data).p_message);
-    println!("[Debug]{}{}{:?}", severity, types, message);
+    println!("[VK Debug]{}{}{:?}", severity, types, message);
 
     vk::FALSE
 }

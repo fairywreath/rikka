@@ -6,7 +6,7 @@ use ash::vk::{self, QUEUE_FAMILY_EXTERNAL};
 use crate::{queue::QueueFamily, surface::Surface};
 
 #[derive(Debug, Clone)]
-pub(crate) struct PhysicalDevice {
+pub struct PhysicalDevice {
     pub physical_device: vk::PhysicalDevice,
 
     pub name: String,
@@ -97,5 +97,13 @@ impl PhysicalDevice {
         extensions
             .iter()
             .all(|ext| supported_extensions.contains(ext))
+    }
+
+    pub fn raw(&self) -> &vk::PhysicalDevice {
+        &self.physical_device
+    }
+
+    pub fn raw_clone(&self) -> vk::PhysicalDevice {
+        self.physical_device.clone()
     }
 }
