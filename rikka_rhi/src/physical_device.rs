@@ -42,7 +42,7 @@ impl PhysicalDevice {
             .enumerate()
             .map(|(index, prop)| {
                 let present_support = unsafe {
-                    surface.ash().get_physical_device_surface_support(
+                    surface.raw().get_physical_device_surface_support(
                         physical_device,
                         index as _,
                         surface.vulkan(),
@@ -64,13 +64,13 @@ impl PhysicalDevice {
 
         let supported_surface_formats = unsafe {
             surface
-                .ash()
+                .raw()
                 .get_physical_device_surface_formats(physical_device, surface.vulkan())?
         };
 
         let supported_present_modes = unsafe {
             surface
-                .ash()
+                .raw()
                 .get_physical_device_surface_present_modes(physical_device, surface.vulkan())?
         };
 

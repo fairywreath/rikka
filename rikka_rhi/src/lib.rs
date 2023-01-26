@@ -15,6 +15,7 @@ mod rhi;
 mod sampler;
 mod shader_state;
 mod surface;
+mod swapchain;
 mod synchronization;
 mod texture;
 

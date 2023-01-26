@@ -72,7 +72,6 @@ pub struct SemaphoreSubmitInfo<'a> {
     // For timeline semaphores.
     pub value: Option<u64>,
 }
-
 pub struct Queue {
     device: Arc<Device>,
     raw: vk::Queue,
@@ -96,7 +95,7 @@ impl Queue {
                     .semaphore(submit_info.semaphore.raw_clone())
                     .stage_mask(submit_info.stage_mask);
 
-                if (submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline) {
+                if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
                     semaphore_submit_info = semaphore_submit_info.value(submit_info.value.unwrap());
                 }
                 semaphore_submit_info.build()
@@ -110,7 +109,7 @@ impl Queue {
                     .semaphore(submit_info.semaphore.raw_clone())
                     .stage_mask(submit_info.stage_mask);
 
-                if (submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline) {
+                if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
                     semaphore_submit_info = semaphore_submit_info.value(submit_info.value.unwrap());
                 }
                 semaphore_submit_info.build()
@@ -135,5 +134,9 @@ impl Queue {
         };
 
         Ok(())
+    }
+
+    pub fn raw_clone(&self) -> vk::Queue {
+        self.raw.clone()
     }
 }

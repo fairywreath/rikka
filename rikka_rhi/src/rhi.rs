@@ -8,17 +8,21 @@ use gpu_allocator::{
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use crate::*;
 use crate::{
     device::Device,
     physical_device::PhysicalDevice,
     queue::{Queue, QueueFamily, QueueFamilyIndices},
     surface::Surface,
+    swapchain::{Swapchain, SwapchainDesc},
     synchronization::{Semaphore, SemaphoreType},
+    *,
 };
 
 pub struct RHI {
+    swapchain: Swapchain,
+
     allocator: Arc<Mutex<Allocator>>,
+
     graphics_queue: Queue,
     present_queue: Queue,
     compute_queue: Queue,
@@ -99,7 +103,18 @@ impl RHI {
         })?;
         let allocator = Arc::new(Mutex::new(allocator));
 
-        let test_sem = Semaphore::new(&device, SemaphoreType::Timeline)?;
+        let swapchain = Swapchain::new(
+            &instance,
+            &surface,
+            &physical_device,
+            &device,
+            SwapchainDesc::new(
+                u32::MAX,
+                u32::MAX,
+                queue_families.graphics.index(),
+                queue_families.present.index(),
+            ),
+        )?;
 
         Ok(Self {
             surface,
@@ -114,6 +129,7 @@ impl RHI {
             transfer_queue,
 
             allocator,
+            swapchain,
         })
     }
 

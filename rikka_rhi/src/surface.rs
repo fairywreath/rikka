@@ -33,7 +33,7 @@ impl Surface {
         })
     }
 
-    pub fn ash(&self) -> &khr::Surface {
+    pub fn raw(&self) -> &khr::Surface {
         &self.ash_surface
     }
 
