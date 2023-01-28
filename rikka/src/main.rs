@@ -18,8 +18,8 @@ fn main() {
         .unwrap();
 
     {
-        let rhi = rikka_rhi::RHI::new(rikka_rhi::RHICreationDesc::new(&window, &window))
-            .expect("Error creating RHI!");
+        let rhi = rikka_rhi::RHIContext::new(rikka_rhi::RHICreationDesc::new(&window, &window))
+            .expect("Error creating RHIContext!");
     }
 
     event_loop.run(move |event, _, control_flow| match event {

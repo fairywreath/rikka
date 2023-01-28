@@ -32,8 +32,6 @@ impl Device {
             indices.sort();
             indices.dedup();
 
-            println!("Deduped indices: {:?}", indices);
-
             indices
                 .iter()
                 .map(|index| {
@@ -127,7 +125,7 @@ impl Device {
         queue_index: u32,
     ) -> Queue {
         let raw = unsafe { self.raw.get_device_queue(queue_family.index(), queue_index) };
-        Queue::new(self.clone(), raw)
+        Queue::new(self.clone(), raw, queue_family.index())
     }
 }
 

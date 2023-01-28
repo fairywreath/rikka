@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use ash::{vk, Entry};
+use ash::vk;
 use gpu_allocator::{
     vulkan::{Allocator, AllocatorCreateDesc},
     AllocatorDebugSettings,
@@ -10,6 +10,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{
     device::Device,
+    frame::{ThreadFramePools, ThreadFramePoolsManager},
     physical_device::PhysicalDevice,
     queue::{Queue, QueueFamily, QueueFamilyIndices},
     surface::Surface,
@@ -18,7 +19,7 @@ use crate::{
     *,
 };
 
-pub struct RHI {
+pub struct RHIContext {
     swapchain: Swapchain,
 
     allocator: Arc<Mutex<Allocator>>,
@@ -27,6 +28,8 @@ pub struct RHI {
     present_queue: Queue,
     compute_queue: Queue,
     transfer_queue: Queue,
+
+    thread_frame_pools_manager: ThreadFramePoolsManager,
 
     device: Arc<Device>,
     queue_families: QueueFamilyIndices,
@@ -54,7 +57,7 @@ impl<'a> RHICreationDesc<'a> {
     }
 }
 
-impl RHI {
+impl RHIContext {
     pub fn new(desc: RHICreationDesc) -> Result<Self> {
         let entry = unsafe { ash::Entry::load()? };
         let mut instance = Instance::new(&entry, &desc.display_handle)?;
@@ -116,6 +119,15 @@ impl RHI {
             ),
         )?;
 
+        let thread_frame_pools_manager = ThreadFramePoolsManager::new(
+            device.clone(),
+            frame::ThreadFramePoolsDesc {
+                num_threads: 1,
+                time_queries_per_frame: 32,
+                graphics_queue_family_index: graphics_queue.family_index(),
+            },
+        )?;
+
         Ok(Self {
             surface,
             instance,
@@ -130,6 +142,8 @@ impl RHI {
 
             allocator,
             swapchain,
+
+            thread_frame_pools_manager,
         })
     }
 
@@ -164,6 +178,10 @@ impl RHI {
         desc: GraphicsPipelineDesc,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreationError> {
         todo!()
+    }
+
+    pub(crate) fn device(&self) -> &Arc<Device> {
+        &self.device
     }
 }
 

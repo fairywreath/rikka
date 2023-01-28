@@ -75,11 +75,16 @@ pub struct SemaphoreSubmitInfo<'a> {
 pub struct Queue {
     device: Arc<Device>,
     raw: vk::Queue,
+    family_index: u32,
 }
 
 impl Queue {
-    pub fn new(device: Arc<Device>, raw: vk::Queue) -> Self {
-        Self { device, raw }
+    pub fn new(device: Arc<Device>, raw: vk::Queue, family_index: u32) -> Self {
+        Self {
+            device,
+            raw,
+            family_index,
+        }
     }
 
     pub fn submit(
@@ -117,7 +122,7 @@ impl Queue {
             .collect::<Vec<_>>();
 
         let command_buffer_submit_info =
-            vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer.raw_clone());
+            vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer.raw());
 
         let submit_info = vk::SubmitInfo2::builder()
             .wait_semaphore_infos(&wait_semaphores_info[..])
@@ -138,5 +143,9 @@ impl Queue {
 
     pub fn raw_clone(&self) -> vk::Queue {
         self.raw.clone()
+    }
+
+    pub fn family_index(&self) -> u32 {
+        self.family_index
     }
 }

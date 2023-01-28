@@ -20,7 +20,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(entry: &ash::Entry, display_handle: &dyn HasRawDisplayHandle) -> Result<Self> {
         // Create vulkan instance.
-        let app_name = CString::new("Rikka RHI").unwrap();
+        let app_name = CString::new("Rikka RHIContext").unwrap();
         let app_info = vk::ApplicationInfo::builder()
             .application_name(app_name.as_c_str())
             .api_version(vk::API_VERSION_1_3);

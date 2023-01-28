@@ -24,7 +24,7 @@ impl Semaphore {
 
         let mut semaphore_type_info =
             vk::SemaphoreTypeCreateInfo::builder().semaphore_type(vk::SemaphoreType::BINARY);
-        if (semaphore_type == SemaphoreType::Timeline) {
+        if semaphore_type == SemaphoreType::Timeline {
             semaphore_type_info = semaphore_type_info.semaphore_type(vk::SemaphoreType::TIMELINE);
         }
         let semaphore_info = semaphore_info.push_next(&mut semaphore_type_info);
