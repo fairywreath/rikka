@@ -17,9 +17,11 @@ pub struct Swapchain {
     extent: vk::Extent2D,
     color_space: vk::ColorSpaceKHR,
     present_mode: vk::PresentModeKHR,
-    // images: Vec<vk::Image>,
-    // image_views: Vec<vk::ImageView>,
+
     image_count: u32,
+    images: Vec<vk::Image>,
+    image_views: Vec<vk::ImageView>,
+
     // Image index obtained from AcquireNextImage.
     vulkan_image_index: u32,
 }
@@ -109,7 +111,6 @@ impl Swapchain {
             } else {
                 let min = capabilities.min_image_extent;
                 let max = capabilities.max_image_extent;
-
                 // Clamp requested extent.
                 let width = swapchain_desc.width.min(max.width).max(min.width);
                 let height = swapchain_desc.height.min(max.height).max(min.height);
@@ -121,7 +122,9 @@ impl Swapchain {
         let image_count = capabilities
             .max_image_count
             .min(capabilities.min_image_count + 1);
-        log::debug!("Swapchain image count: {}", image_count);
+
+        log::info!("Swapchain image count: {}", image_count);
+        log::info!("Swapchain extent: {} X {}", extent.width, extent.height);
 
         let queue_family_indices = [
             swapchain_desc.graphics_queue_family_index,
@@ -161,7 +164,7 @@ impl Swapchain {
         let ash_swapchain = khr::Swapchain::new(instance.raw(), device.raw());
         let vulkan_swapchain = unsafe { ash_swapchain.create_swapchain(&create_info, None)? };
 
-        Ok(Self {
+        let mut swapchain = Self {
             device: device.clone(),
             ash_swapchain,
             vulkan_swapchain,
@@ -172,7 +175,14 @@ impl Swapchain {
 
             image_count,
             vulkan_image_index: 0,
-        })
+
+            images: Vec::new(),
+            image_views: Vec::new(),
+        };
+
+        swapchain.init_images()?;
+
+        Ok(swapchain)
     }
 
     pub fn acquire_next_image(&mut self, signal_semaphore: &Semaphore) -> Result<bool> {
@@ -180,12 +190,14 @@ impl Swapchain {
             self.ash_swapchain.acquire_next_image(
                 self.vulkan_swapchain,
                 u64::MAX,
-                signal_semaphore.raw_clone(),
+                signal_semaphore.raw(),
                 vk::Fence::null(),
             )?
         };
 
         self.vulkan_image_index = image_index;
+
+        log::debug!("Swapchain acquire image index: {}", image_index);
 
         Ok(is_suboptimal)
     }
@@ -227,116 +239,73 @@ impl Swapchain {
         self.color_space
     }
 
-    // fn create_swapchain(&mut self) -> Result<()> {
-    //     let surface_format = {
-    //         let formats = unsafe {
-    //             self.ash_surface.get_physical_device_surface_formats(
-    //                 self.physical_device,
-    //                 self.vulkan_surface,
-    //             )?
-    //         };
+    pub fn current_image(&self) -> vk::Image {
+        self.images[self.vulkan_image_index as usize]
+    }
 
-    //         if formats.len() == 1 && formats[0].format == vk::Format::UNDEFINED {
-    //             vk::SurfaceFormatKHR {
-    //                 format: vk::Format::B8G8R8A8_UNORM,
-    //                 color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
-    //             }
-    //         } else {
-    //             *formats
-    //                 .iter()
-    //                 .find(|format| {
-    //                     format.format == vk::Format::B8G8R8A8_UNORM
-    //                         && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-    //                 })
-    //                 .unwrap_or(&formats[0])
-    //         }
-    //     };
+    pub fn current_image_view(&self) -> vk::ImageView {
+        self.image_views[self.vulkan_image_index as usize]
+    }
 
-    //     let present_mode = {
-    //         let present_modes = unsafe {
-    //             self.ash_surface.get_physical_device_surface_present_modes(
-    //                 self.physical_device,
-    //                 self.vulkan_surface,
-    //             )?
-    //         };
-
-    //         if present_modes.contains(&vk::PresentModeKHR::FIFO) {
-    //             vk::PresentModeKHR::FIFO
-    //         } else {
-    //             vk::PresentModeKHR::FIFO
-    //         }
-    //     };
-
-    //     // Get surface capabilities.
-    //     let capabilities = unsafe {
-    //         self.ash_surface.get_physical_device_surface_capabilities(
-    //             self.physical_device,
-    //             self.vulkan_surface,
-    //         )?
-    //     };
-
-    //     let extent = {
-    //         if capabilities.current_extent.width != std::u32::MAX {
-    //             capabilities.current_extent
-    //         } else {
-    //             let min = capabilities.min_image_extent;
-    //             let max = capabilities.max_image_extent;
-
-    //             // Clamp requested extent.
-    //             let width = self.swapchain_desc.width.min(max.width).max(min.width);
-    //             let height = self.swapchain_desc.height.min(max.height).max(min.height);
-
-    //             vk::Extent2D { width, height }
-    //         }
-    //     };
-
-    //     let image_count = capabilities
-    //         .max_image_count
-    //         .min(capabilities.min_image_count + 1);
-    //     log::debug!("Swapchain image count: {}", image_count);
-
-    //     let queue_family_indices = [
-    //         self.swapchain_desc.graphics_queue_family_index,
-    //         self.swapchain_desc.present_queue_family_index,
-    //     ];
-
-    //     let create_info = {
-    //         let mut info = vk::SwapchainCreateInfoKHR::builder()
-    //             .surface(self.vulkan_surface)
-    //             .min_image_count(image_count)
-    //             .image_format(surface_format.format)
-    //             .image_color_space(surface_format.color_space)
-    //             .image_extent(extent)
-    //             .image_array_layers(1)
-    //             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-    //             .pre_transform(capabilities.current_transform)
-    //             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-    //             .present_mode(present_mode);
-
-    //         if self.swapchain_desc.graphics_queue_family_index
-    //             == self.swapchain_desc.present_queue_family_index
-    //         {
-    //             info.image_sharing_mode(vk::SharingMode::EXCLUSIVE);
-    //         } else {
-    //             info.image_sharing_mode(vk::SharingMode::CONCURRENT);
-    //             info.queue_family_indices(&queue_family_indices);
-    //         }
-
-    //         info
-    //     };
-
-    //     // Create swapchain.
-    //     self.ash_swapchain = khr::Swapchain::new(&self.instance, self.device.raw());
-    //     self.vulkan_swapchain = unsafe { self.ash_swapchain.create_swapchain(&create_info, None)? };
-
-    //     Ok(())
-    // }
-
-    fn destroy(&mut self) {
+    pub fn destroy(&mut self) {
         unsafe {
+            for image_view in &self.image_views {
+                self.device
+                    .raw()
+                    .destroy_image_view(image_view.clone(), None);
+            }
+            self.image_views.clear();
+
             self.ash_swapchain
                 .destroy_swapchain(self.vulkan_swapchain, None);
         }
+    }
+
+    fn init_images(&mut self) -> Result<()> {
+        let images = unsafe {
+            self.ash_swapchain
+                .get_swapchain_images(self.vulkan_swapchain)?
+        };
+
+        assert_eq!(self.image_count, images.len() as u32);
+
+        let mut image_views = Vec::<vk::ImageView>::with_capacity(images.len());
+        for image in &images {
+            let image_view_info = vk::ImageViewCreateInfo::builder()
+                .image(image.clone())
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(self.format)
+                .components(
+                    vk::ComponentMapping::builder()
+                        .r(vk::ComponentSwizzle::IDENTITY)
+                        .g(vk::ComponentSwizzle::IDENTITY)
+                        .b(vk::ComponentSwizzle::IDENTITY)
+                        .a(vk::ComponentSwizzle::IDENTITY)
+                        .build(),
+                )
+                .subresource_range(
+                    vk::ImageSubresourceRange::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                );
+
+            unsafe {
+                image_views.push(
+                    self.device
+                        .raw()
+                        .create_image_view(&image_view_info, None)?,
+                )
+            };
+        }
+
+        self.images = images;
+        self.image_views = image_views;
+
+        Ok(())
     }
 }
 

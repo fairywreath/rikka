@@ -15,6 +15,7 @@ mod query;
 mod queue;
 mod rhi;
 mod sampler;
+mod shader;
 mod shader_state;
 mod surface;
 mod swapchain;
@@ -30,7 +31,3 @@ pub use rhi::*;
 pub use sampler::*;
 pub use shader_state::*;
 pub use texture::*;
-
-pub fn print_rhi() {
-    println!("from rhi!");
-}

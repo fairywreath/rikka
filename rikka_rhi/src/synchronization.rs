@@ -19,7 +19,7 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    pub fn new(device: &Arc<Device>, semaphore_type: SemaphoreType) -> Result<Self> {
+    pub fn new(device: Arc<Device>, semaphore_type: SemaphoreType) -> Result<Self> {
         let semaphore_info = vk::SemaphoreCreateInfo::builder();
 
         let mut semaphore_type_info =
@@ -32,14 +32,14 @@ impl Semaphore {
         let raw = unsafe { device.raw().create_semaphore(&semaphore_info, None)? };
 
         Ok(Self {
-            device: device.clone(),
+            device,
             raw,
             semaphore_type,
         })
     }
 
-    pub fn raw(&self) -> &vk::Semaphore {
-        &self.raw
+    pub fn raw(&self) -> vk::Semaphore {
+        self.raw
     }
 
     pub fn raw_clone(&self) -> vk::Semaphore {

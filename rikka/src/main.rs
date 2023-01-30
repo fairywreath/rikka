@@ -1,3 +1,5 @@
+use std::sync::{Arc, Weak};
+
 use winit::{
     dpi,
     event::*,
@@ -6,7 +8,10 @@ use winit::{
 };
 
 fn main() {
-    env_logger::init();
+    let env = env_logger::Env::default()
+        .filter_or("MY_LOG_LEVEL", "trace")
+        .write_style_or("MY_LOG_STYLE", "always");
+    env_logger::init_from_env(env);
 
     let event_loop = EventLoop::new();
 
@@ -17,10 +22,8 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    {
-        let rhi = rikka_rhi::RHIContext::new(rikka_rhi::RHICreationDesc::new(&window, &window))
-            .expect("Error creating RHIContext!");
-    }
+    let mut rhi = rikka_rhi::RHIContext::new(rikka_rhi::RHICreationDesc::new(&window, &window))
+        .expect("Error creating RHIContext!");
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -39,6 +42,29 @@ fn main() {
             } => *control_flow = ControlFlow::Exit,
             _ => {}
         },
+        // Render.
+        Event::MainEventsCleared => {
+            rhi.new_frame().unwrap();
+
+            let acquire_result = !rhi.swapchain_acquire_next_image().unwrap();
+
+            if acquire_result {
+                let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();
+
+                command_buffer
+                    .test_record_commands(rhi.swapchain())
+                    .unwrap();
+
+                rhi.submit_graphics_command_buffer(Arc::downgrade(&command_buffer))
+                    .unwrap();
+
+                rhi.present().unwrap();
+            } else {
+                rhi.recreate_swapchain()
+                    .expect("Failed to recreate swapchain!");
+                rhi.advance_frame_counters();
+            }
+        }
         _ => {}
     });
 }

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::Result;
 use ash::vk;
@@ -89,7 +89,7 @@ impl Queue {
 
     pub fn submit(
         &self,
-        command_buffer: &CommandBuffer,
+        command_buffers: &Vec<Weak<CommandBuffer>>,
         wait_semaphores: Vec<SemaphoreSubmitInfo>,
         signal_semaphores: Vec<SemaphoreSubmitInfo>,
     ) -> Result<()> {
@@ -101,7 +101,11 @@ impl Queue {
                     .stage_mask(submit_info.stage_mask);
 
                 if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
-                    semaphore_submit_info = semaphore_submit_info.value(submit_info.value.unwrap());
+                    semaphore_submit_info = semaphore_submit_info.value(
+                        submit_info
+                            .value
+                            .expect("Timeline wait semaphore requires a value!"),
+                    );
                 }
                 semaphore_submit_info.build()
             })
@@ -115,19 +119,29 @@ impl Queue {
                     .stage_mask(submit_info.stage_mask);
 
                 if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
-                    semaphore_submit_info = semaphore_submit_info.value(submit_info.value.unwrap());
+                    semaphore_submit_info = semaphore_submit_info.value(
+                        submit_info
+                            .value
+                            .expect("Timeline signal semaphore requires a value!"),
+                    );
                 }
                 semaphore_submit_info.build()
             })
             .collect::<Vec<_>>();
 
-        let command_buffer_submit_info =
-            vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer.raw());
+        let command_buffer_submit_infos = command_buffers
+            .iter()
+            .map(|command_buffer| {
+                vk::CommandBufferSubmitInfo::builder()
+                    .command_buffer(command_buffer.upgrade().unwrap().raw())
+                    .build()
+            })
+            .collect::<Vec<_>>();
 
         let submit_info = vk::SubmitInfo2::builder()
             .wait_semaphore_infos(&wait_semaphores_info[..])
             .signal_semaphore_infos(&signal_semaphores_info[..])
-            .command_buffer_infos(std::slice::from_ref(&command_buffer_submit_info))
+            .command_buffer_infos(&command_buffer_submit_infos[..])
             .build();
 
         unsafe {

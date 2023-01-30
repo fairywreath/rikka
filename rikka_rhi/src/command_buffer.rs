@@ -1,9 +1,17 @@
-use std::sync::Arc;
+use log::{debug, error, info, log_enabled, warn, Level};
+use std::sync::{Arc, Mutex, Weak};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use ash::vk;
 
-use crate::{device::Device, queue::QueueFamily, rhi::RHIContext};
+use crate::{
+    command_buffer,
+    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
+    device::Device,
+    frame::{self, FrameThreadPoolsManager},
+    graphics_pipeline::GraphicsPipeline,
+    swapchain::Swapchain,
+};
 
 pub struct CommandPool {
     raw: vk::CommandPool,
@@ -72,7 +80,216 @@ impl Drop for CommandPool {
         unsafe { self.device.raw().destroy_command_pool(self.raw, None) }
     }
 }
+pub struct CommandBufferManager {
+    device: Arc<Device>,
 
+    command_buffers: Vec<Arc<CommandBuffer>>,
+    secondary_command_buffers: Vec<Arc<CommandBuffer>>,
+
+    // Size equal to number of command pools.
+    num_used_command_buffers: Vec<u32>,
+    num_used_secondary_command_buffers: Vec<u32>,
+
+    num_frames: u32,
+    // Equal to number of pools per frame
+    num_threads_per_frame: u32,
+    num_command_buffers_per_thread: u32,
+}
+
+impl CommandBufferManager {
+    pub fn new(
+        device: Arc<Device>,
+        frame_thread_pools_manager: &FrameThreadPoolsManager,
+    ) -> Result<Self> {
+        let num_frames = constants::MAX_FRAMES;
+        let num_threads_per_frame = frame_thread_pools_manager.num_threads();
+        let num_command_buffers_per_thread = constants::NUM_COMMAND_BUFFERS_PER_THREAD;
+
+        let num_total_pools = num_threads_per_frame * num_frames;
+
+        let num_used_command_buffers: Vec<u32> = vec![0; num_total_pools as usize];
+        let num_used_secondary_command_buffers: Vec<u32> = vec![0; num_total_pools as usize];
+
+        let num_command_buffers = num_total_pools * num_command_buffers_per_thread;
+        let mut command_buffers = Vec::<CommandBuffer>::with_capacity(num_command_buffers as usize);
+
+        // XXX: Do we need these actually? On same graphics queue?
+        let num_secondary_command_buffers =
+            num_total_pools * constants::NUM_SECONDARY_COMMAND_BUFFERS_PER_THREAD;
+        let mut secondary_command_buffers =
+            Vec::<CommandBuffer>::with_capacity(num_secondary_command_buffers as usize);
+
+        for frame_index in 0..num_frames {
+            for thread_index in 0..num_threads_per_frame {
+                let command_pool =
+                    frame_thread_pools_manager.command_pool_at(frame_index, thread_index);
+
+                // Create primary command buffers.
+                for _ in 0..num_command_buffers_per_thread {
+                    let array_index = command_buffers.len();
+                    let meta_data = CommandBufferMetaData {
+                        array_index: array_index as u32,
+                        frame_index,
+                        thread_index,
+                    };
+
+                    let command_buffer =
+                        command_pool.allocate_command_buffer(vk::CommandBufferLevel::PRIMARY)?;
+                    command_buffers.push(CommandBuffer::new(
+                        device.clone(),
+                        command_buffer,
+                        meta_data,
+                        false,
+                    ));
+                }
+
+                // Create secondary command buffers.
+                let current_secondary_buffers = command_pool.allocate_command_buffers(
+                    vk::CommandBufferLevel::SECONDARY,
+                    constants::NUM_COMMAND_BUFFERS_PER_THREAD,
+                )?;
+                for i in 0..constants::NUM_SECONDARY_COMMAND_BUFFERS_PER_THREAD {
+                    let array_index = secondary_command_buffers.len() as u32;
+                    let meta_data = CommandBufferMetaData {
+                        array_index,
+                        frame_index: u32::MAX,
+                        thread_index: u32::MAX,
+                    };
+                    secondary_command_buffers.push(CommandBuffer::new(
+                        device.clone(),
+                        current_secondary_buffers[i as usize],
+                        meta_data,
+                        true,
+                    ));
+                }
+            }
+        }
+
+        info!(
+            "Total number of primary (graphics) command buffers: {}",
+            command_buffers.len()
+        );
+        info!(
+            "Total number of secondary (graphics) command buffers: {}",
+            secondary_command_buffers.len()
+        );
+
+        let command_buffers = command_buffers
+            .into_iter()
+            .map(|command_buffer| Arc::new(command_buffer))
+            .collect::<Vec<_>>();
+
+        let secondary_command_buffers = secondary_command_buffers
+            .into_iter()
+            .map(|command_buffer| Arc::new(command_buffer))
+            .collect::<Vec<_>>();
+
+        Ok(Self {
+            device,
+            command_buffers,
+            secondary_command_buffers,
+            num_used_command_buffers,
+            num_used_secondary_command_buffers,
+
+            num_frames,
+            num_threads_per_frame,
+            num_command_buffers_per_thread,
+        })
+    }
+
+    pub fn reset_pools(
+        &mut self,
+        pools_manager: &FrameThreadPoolsManager,
+        frame_index: u32,
+    ) -> Result<()> {
+        for thread_index in 0..self.num_threads_per_frame {
+            let command_pool = pools_manager.command_pool_at(frame_index, thread_index);
+            unsafe {
+                self.device
+                    .raw()
+                    .reset_command_pool(command_pool.raw(), vk::CommandPoolResetFlags::empty())?;
+            }
+
+            let pool_index = self.pool_index_from_indices(frame_index, thread_index) as usize;
+            self.num_used_command_buffers[pool_index] = 0;
+            self.num_used_secondary_command_buffers[pool_index] = 0;
+        }
+
+        Ok(())
+    }
+
+    pub fn command_buffer(
+        &mut self,
+        frame_index: u32,
+        thread_index: u32,
+    ) -> Result<Weak<CommandBuffer>> {
+        let pool_index = self.pool_index_from_indices(frame_index, thread_index);
+        let num_used_buffers = self.num_used_command_buffers[pool_index as usize];
+
+        if num_used_buffers > self.num_command_buffers_per_thread {
+            return Err(anyhow!(
+                "All command buffers in current frame thread are already used!"
+            ));
+        }
+
+        // XXX: Handle multiple command buffer usage in one single thread.
+        // self.num_used_command_buffers[pool_index as usize] += 1;
+
+        let index = (pool_index * self.num_command_buffers_per_thread) + num_used_buffers;
+
+        log::error!(
+            "Accessing command buffer at frame_index {} and array_index {}",
+            frame_index,
+            index
+        );
+
+        let command_buffer = Arc::downgrade(&self.command_buffers[index as usize]);
+        Ok(command_buffer)
+    }
+
+    pub fn secondary_command_buffer(
+        &mut self,
+        frame_index: u32,
+        thread_index: u32,
+    ) -> Result<Weak<CommandBuffer>> {
+        let pool_index = self.pool_index_from_indices(frame_index, thread_index);
+        let num_used_buffers = self.num_used_secondary_command_buffers[pool_index as usize];
+
+        if num_used_buffers > constants::NUM_SECONDARY_COMMAND_BUFFERS_PER_THREAD {
+            return Err(anyhow!(
+                "All secondary command buffers in current frame thread are already used!"
+            ));
+        }
+
+        self.num_used_secondary_command_buffers[pool_index as usize] += 1;
+        let index =
+            (pool_index * constants::NUM_SECONDARY_COMMAND_BUFFERS_PER_THREAD) * num_used_buffers;
+
+        let command_buffer = Arc::downgrade(&self.secondary_command_buffers[index as usize]);
+
+        Ok(command_buffer)
+    }
+
+    fn pool_index_from_indices(&self, frame_index: u32, thread_index: u32) -> u32 {
+        assert!(frame_index < constants::MAX_FRAMES);
+        assert!(thread_index < self.num_threads_per_frame);
+
+        (frame_index * self.num_threads_per_frame) + thread_index
+    }
+}
+
+impl Drop for CommandBufferManager {
+    fn drop(&mut self) {}
+}
+
+// Information for CommandBufferManager
+pub struct CommandBufferMetaData {
+    // index to command buffer array in CommandBufferManager
+    pub array_index: u32,
+
+    pub frame_index: u32,
+    pub thread_index: u32,
+}
 pub struct CommandBuffer {
     device: Arc<Device>,
     raw: vk::CommandBuffer,
@@ -83,55 +300,224 @@ pub struct CommandBuffer {
     meta_data: CommandBufferMetaData,
     // Reference to pipeline?
     // pipeline: vk::Pipeline,
+    // mesh_shading_context
 }
 
 impl CommandBuffer {
-    pub(crate) fn new(device: Arc<Device>, command_buffer: vk::CommandBuffer) -> Self {
+    pub(crate) fn new(
+        device: Arc<Device>,
+        command_buffer: vk::CommandBuffer,
+        meta_data: CommandBufferMetaData,
+        is_secondary: bool,
+    ) -> Self {
         Self {
             device: device.clone(),
             raw: command_buffer,
-
             is_recording: false,
-            is_secondary: false,
-
-            meta_data: CommandBufferMetaData { index: 0 },
+            is_secondary,
+            meta_data,
         }
     }
 
     pub fn raw(&self) -> vk::CommandBuffer {
         self.raw
     }
-}
 
-// Information for CommandBufferManager
-pub struct CommandBufferMetaData {
-    // index to command buffer array in CommandBufferManager
-    pub(crate) index: u32,
-}
+    pub fn begin(&mut self) -> Result<()> {
+        if !self.is_recording {
+            let begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            unsafe {
+                self.device
+                    .raw()
+                    .begin_command_buffer(self.raw, &begin_info)?
+            };
+            self.is_recording = true;
+        } else {
+            warn!("Called begin to command buffer that is already recording!");
+        }
 
-pub struct CommandBufferManager {
-    device: Arc<Device>,
-
-    command_buffers: Vec<CommandBuffer>,
-    secondary_command_buffers: Vec<CommandBuffer>,
-
-    num_used_command_buffers: Vec<u32>,
-    num_used_secondary_command_buffers: Vec<u32>,
-
-    // Equal to number of threads.
-    num_pools_per_frame: u32,
-
-    num_command_buffers_per_thread: u32,
-}
-
-pub struct CommandBufferManagerDesc {}
-
-impl CommandBufferManager {
-    pub fn new(device: Arc<Device>) {
-        todo!()
+        Ok(())
     }
-}
 
-impl Drop for CommandBufferManager {
-    fn drop(&mut self) {}
+    pub fn end(&mut self) -> Result<()> {
+        if self.is_recording {
+            unsafe { self.device.raw().end_command_buffer(self.raw)? };
+            self.is_recording = false;
+        } else {
+            warn!("Called end to command buffer that is not recording!");
+        }
+
+        Ok(())
+    }
+
+    pub fn begin_rendering(&self) {
+        // XXX: Obtained these from renderpass/framebuffer-like objects.
+        let num_color_attachments = 0u32;
+        let contains_depth = true;
+
+        let mut color_attachments_info =
+            Vec::<vk::RenderingAttachmentInfo>::with_capacity(num_color_attachments as usize);
+
+        // Loop through color attachments.
+
+        let mut depth_attachment_info = vk::RenderingAttachmentInfo::builder();
+
+        let mut rendering_info = vk::RenderingInfo::builder()
+            .flags(if self.is_secondary {
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+            } else {
+                vk::RenderingFlags::empty()
+            })
+            .color_attachments(&color_attachments_info);
+        // .render_area();
+
+        if contains_depth {
+            rendering_info = rendering_info.depth_attachment(&depth_attachment_info);
+        }
+
+        unsafe {
+            self.device
+                .raw()
+                .cmd_begin_rendering(self.raw, &rendering_info);
+        }
+    }
+
+    pub fn end_rendering(&self) {
+        unsafe {
+            self.device.raw().cmd_end_rendering(self.raw);
+        }
+    }
+
+    pub fn bind_graphics_pipeline(&self, pipeline: &GraphicsPipeline) {
+        unsafe {
+            self.device.raw().cmd_bind_pipeline(
+                self.raw,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.raw(),
+            );
+        }
+    }
+
+    // Clear functions handled by RenderPassState?
+
+    pub fn draw(
+        &self,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.device.raw().cmd_draw(
+                self.raw,
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            );
+        }
+    }
+
+    pub fn draw_indexed(
+        &self,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.device.raw().cmd_draw_indexed(
+                self.raw,
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            );
+        }
+    }
+
+    pub fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {
+        unsafe {
+            self.device
+                .raw()
+                .cmd_dispatch(self.raw, group_count_x, group_count_y, group_count_z);
+        }
+    }
+
+    pub fn test_record_commands(&self, swapchain: &Swapchain) -> Result<()> {
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.device
+                .raw()
+                .begin_command_buffer(self.raw, &begin_info)?
+        };
+
+        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .image(swapchain.current_image())
+            .subresource_range(
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .build();
+
+        unsafe {
+            self.device.raw().cmd_pipeline_barrier(
+                self.raw,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[image_memory_barrier],
+            );
+        }
+
+        // begin rendering
+
+        // end rendering
+
+        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .image(swapchain.current_image())
+            .subresource_range(
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .build();
+
+        unsafe {
+            self.device.raw().cmd_pipeline_barrier(
+                self.raw,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[image_memory_barrier],
+            );
+        }
+
+        unsafe { self.device.raw().end_command_buffer(self.raw)? };
+
+        Ok(())
+    }
 }
