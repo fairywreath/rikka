@@ -98,7 +98,8 @@ impl Queue {
             .map(|submit_info| {
                 let mut semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
                     .semaphore(submit_info.semaphore.raw_clone())
-                    .stage_mask(submit_info.stage_mask);
+                    .stage_mask(submit_info.stage_mask)
+                    .value(0);
 
                 if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
                     semaphore_submit_info = semaphore_submit_info.value(
@@ -116,7 +117,8 @@ impl Queue {
             .map(|submit_info| {
                 let mut semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
                     .semaphore(submit_info.semaphore.raw_clone())
-                    .stage_mask(submit_info.stage_mask);
+                    .stage_mask(submit_info.stage_mask)
+                    .value(0);
 
                 if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
                     semaphore_submit_info = semaphore_submit_info.value(
@@ -124,6 +126,8 @@ impl Queue {
                             .value
                             .expect("Timeline signal semaphore requires a value!"),
                     );
+
+                    log::warn!("SIGNALLING TIMELINE VALUE: {}", semaphore_submit_info.value);
                 }
                 semaphore_submit_info.build()
             })
@@ -144,6 +148,14 @@ impl Queue {
             .command_buffer_infos(&command_buffer_submit_infos[..])
             .build();
 
+        log::info!(
+            "Submit info wait sem length: {}",
+            submit_info.wait_semaphore_info_count,
+        );
+        log::info!(
+            "Submit info signal sem length: {}",
+            submit_info.signal_semaphore_info_count,
+        );
         unsafe {
             self.device.raw().queue_submit2(
                 self.raw,

@@ -50,14 +50,11 @@ fn main() {
 
             if acquire_result {
                 let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();
-
                 command_buffer
                     .test_record_commands(rhi.swapchain())
                     .unwrap();
-
                 rhi.submit_graphics_command_buffer(Arc::downgrade(&command_buffer))
                     .unwrap();
-
                 rhi.present().unwrap();
             } else {
                 rhi.recreate_swapchain()

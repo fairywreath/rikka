@@ -35,7 +35,8 @@ impl Instance {
             layer_strings.iter().map(|c_str| c_str.as_ptr()).collect();
 
         let validation_features = vec![
-            vk::ValidationFeatureEnableEXT::GPU_ASSISTED,
+            // This feature is broken.
+            // vk::ValidationFeatureEnableEXT::GPU_ASSISTED,
             vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
             vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
         ];

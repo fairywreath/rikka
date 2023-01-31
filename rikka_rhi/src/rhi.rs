@@ -127,7 +127,7 @@ impl RHIContext {
         let frame_thread_pools_manager = FrameThreadPoolsManager::new(
             device.clone(),
             frame::FrameThreadPoolsDesc {
-                num_threads: 3,
+                num_threads: 1,
                 time_queries_per_frame: 32,
                 graphics_queue_family_index: graphics_queue.family_index(),
             },
