@@ -20,9 +20,8 @@ pub struct CommandPool {
 
 impl CommandPool {
     pub fn new(device: Arc<Device>, queue_family_index: u32) -> Result<Self> {
-        let command_pool_info = vk::CommandPoolCreateInfo::builder()
-            .queue_family_index(queue_family_index)
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        let command_pool_info =
+            vk::CommandPoolCreateInfo::builder().queue_family_index(queue_family_index);
 
         let command_pool = unsafe {
             let command_pool = device.raw().create_command_pool(&command_pool_info, None)?;
@@ -238,12 +237,6 @@ impl CommandBufferManager {
 
         let index = (pool_index * self.num_command_buffers_per_thread) + num_used_buffers;
 
-        log::error!(
-            "Accessing command buffer at frame_index {} and array_index {}",
-            frame_index,
-            index
-        );
-
         let command_buffer = Arc::downgrade(&self.command_buffers[index as usize]);
         Ok(command_buffer)
     }
@@ -326,11 +319,11 @@ impl CommandBuffer {
 
     pub fn begin(&mut self) -> Result<()> {
         if !self.is_recording {
-            unsafe {
-                self.device
-                    .raw()
-                    .reset_command_buffer(self.raw, vk::CommandBufferResetFlags::empty())?
-            };
+            // unsafe {
+            //     self.device
+            //         .raw()
+            //         .reset_command_buffer(self.raw, vk::CommandBufferResetFlags::empty())?
+            // };
 
             let begin_info = vk::CommandBufferBeginInfo::builder()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);

@@ -46,7 +46,7 @@ fn main() {
         Event::MainEventsCleared => {
             rhi.new_frame().unwrap();
 
-            let acquire_result = !rhi.swapchain_acquire_next_image().unwrap();
+            let acquire_result = rhi.swapchain_acquire_next_image().unwrap();
 
             if acquire_result {
                 let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();

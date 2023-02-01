@@ -188,30 +188,18 @@ impl FrameSynchronizationManager {
         self.frame_index_data.current =
             (self.frame_index_data.current + 1) % (constants::MAX_FRAMES as u64);
         self.frame_index_data.absolute += 1;
-
-        log::error!("NEW CURRENT INDEX: {}", self.frame_index_data.current);
     }
 
     pub fn wait_graphics_compute_semaphores(&self) -> Result<()> {
         // This if statement is really ugly, since it is satisfied every frame except for the first few
         if self.frame_index_data.absolute >= constants::MAX_FRAMES as u64 {
             let graphics_wait_value = self.graphics_semaphore_wait_value();
-            // let graphics_wait_value = self.frame_index_data.absolute;
-            // let graphics_wait_value = 0;
-            // let compute_wait_value = self.last_compute_semaphore_value;
-
-            log::info!("Waiting on value: {}", graphics_wait_value);
 
             let current_value = unsafe {
                 self.device
                     .raw()
                     .get_semaphore_counter_value(self.graphics_work_semaphore.raw())?
             };
-
-            log::info!(
-                "Current GRAPHICS TIMELINE semaphore value: {}",
-                current_value
-            );
 
             let wait_values = [
                 graphics_wait_value,
@@ -285,11 +273,6 @@ impl FrameSynchronizationManager {
                 value: Some(self.frame_index_data.absolute + 1),
             },
         ];
-
-        log::info!(
-            "Signalling graphics semaphore of value: {}",
-            signal_semaphores[1].value.unwrap(),
-        );
 
         queue.submit(command_buffers, wait_semaphores, signal_semaphores)?;
 

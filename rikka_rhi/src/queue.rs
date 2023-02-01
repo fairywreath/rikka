@@ -126,8 +126,6 @@ impl Queue {
                             .value
                             .expect("Timeline signal semaphore requires a value!"),
                     );
-
-                    log::warn!("SIGNALLING TIMELINE VALUE: {}", semaphore_submit_info.value);
                 }
                 semaphore_submit_info.build()
             })
@@ -148,14 +146,6 @@ impl Queue {
             .command_buffer_infos(&command_buffer_submit_infos[..])
             .build();
 
-        log::info!(
-            "Submit info wait sem length: {}",
-            submit_info.wait_semaphore_info_count,
-        );
-        log::info!(
-            "Submit info signal sem length: {}",
-            submit_info.signal_semaphore_info_count,
-        );
         unsafe {
             self.device.raw().queue_submit2(
                 self.raw,

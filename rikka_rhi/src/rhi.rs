@@ -194,9 +194,13 @@ impl RHIContext {
     // }
 
     pub fn new_frame(&mut self) -> Result<()> {
-        log::info!("Waiting for graphics semaphore!");
         self.frame_synchronization_manager
             .wait_graphics_compute_semaphores()?;
+
+        self.command_buffer_manager.reset_pools(
+            &self.frame_thread_pools_manager,
+            self.frame_synchronization_manager.current_frame_index() as u32,
+        )?;
 
         // XXX: Update descriptor sets.
 
@@ -216,17 +220,6 @@ impl RHIContext {
         Ok(())
     }
 
-    // pub fn submit_current_graphics_command_buffer(&mut self) -> Result<()> {
-    //     let command_buffer = self.command_buffer_manager.command_buffer(
-    //         self.frame_synchronization_manager.current_frame_index() as u32,
-    //         0,
-    //     )?;
-
-    //     self.submit_graphics_command_buffer(command_buffer);
-
-    //     Ok(())
-    // }
-
     // XXX: Do not expose this? queue command buffer and call this during present before submitting queued command buffers.
     pub fn swapchain_acquire_next_image(&mut self) -> Result<bool> {
         // XXX: Handle this in FrameSynchronizationManager?
@@ -234,22 +227,6 @@ impl RHIContext {
             self.frame_synchronization_manager
                 .swapchain_image_acquired_semaphore(),
         )?;
-
-        // XXX: Properly handle swapchain re-creation.
-        // assert!(acquire_result);
-
-        log::debug!("Swapchain acquire image result is {}", acquire_result);
-
-        // if !acquire_result {
-        //     self.recreate_swapchain()?;
-
-        //     let acquire_result = self.swapchain.acquire_next_image(
-        //         self.frame_synchronization_manager
-        //             .swapchain_image_acquired_semaphore(),
-        //     )?;
-
-        //     log::info!("Acquire result 2 is {}", acquire_result);
-        // }
 
         Ok(acquire_result)
     }
@@ -269,25 +246,6 @@ impl RHIContext {
             .frame_synchronization_manager
             .swapchain_image_acquired_semaphore()
             .raw()];
-        // let wait_info = vk::SemaphoreWaitInfo::builder().semaphores(&semaphores);
-        // unsafe { self.device.raw().wait_semaphores(&wait_info, u64::MAX)? };
-
-        // unsafe {
-        //     self.device
-        //         .raw()
-        //         .queue_wait_idle(self.graphics_queue.raw_clone())?;
-
-        //     self.device.rese
-        // }
-
-        //         const VkPipelineStageFlags psw = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        // VkSubmitInfo submit_info = {};
-        // submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        // submit_info.waitSemaphoreCount = 1;
-        // submit_info.pWaitSemaphores = &semaphore;
-        // submit_info.pWaitDstStageMask;
-
-        // vkQueueSubmit( queue, 1, &submit_info, VK_NULL_HANDLE );
 
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(&semaphores)

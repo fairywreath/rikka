@@ -197,9 +197,7 @@ impl Swapchain {
 
         self.vulkan_image_index = image_index;
 
-        log::debug!("Swapchain acquire image index: {}", image_index);
-
-        Ok(is_suboptimal)
+        Ok(!is_suboptimal)
     }
 
     pub fn queue_present(&self, wait_semaphores: &[&Semaphore], queue: &Queue) -> Result<bool> {
@@ -248,16 +246,18 @@ impl Swapchain {
     }
 
     pub fn destroy(&mut self) {
-        unsafe {
-            for image_view in &self.image_views {
-                self.device
-                    .raw()
-                    .destroy_image_view(image_view.clone(), None);
-            }
-            self.image_views.clear();
+        if !self.image_views.is_empty() {
+            unsafe {
+                for image_view in &self.image_views {
+                    self.device
+                        .raw()
+                        .destroy_image_view(image_view.clone(), None);
+                }
+                self.image_views.clear();
 
-            self.ash_swapchain
-                .destroy_swapchain(self.vulkan_swapchain, None);
+                self.ash_swapchain
+                    .destroy_swapchain(self.vulkan_swapchain, None);
+            }
         }
     }
 
