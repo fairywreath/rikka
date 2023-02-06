@@ -23,6 +23,7 @@ mod synchronization;
 mod texture;
 
 pub use buffer::*;
+pub use command_buffer::*;
 pub use descriptor_set::*;
 pub use device::*;
 pub use graphics_pipeline::*;

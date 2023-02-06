@@ -1,15 +1,18 @@
 use log::{debug, error, info, log_enabled, warn, Level};
-use std::sync::{Arc, Mutex, Weak};
+use std::{
+    mem::swap,
+    sync::{Arc, Mutex, Weak},
+};
 
 use anyhow::{anyhow, Result};
-use ash::vk;
+use ash::vk::{self, RenderingAttachmentInfo};
 
 use crate::{
     command_buffer,
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     device::Device,
     frame::{self, FrameThreadPoolsManager},
-    graphics_pipeline::GraphicsPipeline,
+    graphics_pipeline::*,
     swapchain::Swapchain,
 };
 
@@ -351,30 +354,62 @@ impl CommandBuffer {
         Ok(())
     }
 
-    pub fn begin_rendering(&self) {
-        // XXX: Obtained these from renderpass/framebuffer-like objects.
-        let num_color_attachments = 0u32;
-        let contains_depth = true;
+    pub fn begin_rendering(&self, rendering_state: RenderingState) {
+        let mut color_attachments_info = Vec::<vk::RenderingAttachmentInfo>::with_capacity(
+            rendering_state.color_attachments.len(),
+        );
 
-        let mut color_attachments_info =
-            Vec::<vk::RenderingAttachmentInfo>::with_capacity(num_color_attachments as usize);
+        for attachment in rendering_state.color_attachments {
+            let rendering_attachment = vk::RenderingAttachmentInfo::builder()
+                .image_view(attachment.image_view)
+                .image_layout(attachment.image_layout)
+                .resolve_mode(vk::ResolveModeFlags::NONE)
+                .load_op(attachment.operation.vk_attachment_load_op())
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(if attachment.operation == RenderPassOperation::Clear {
+                    vk::ClearValue {
+                        color: attachment.clear_value,
+                    }
+                } else {
+                    vk::ClearValue::default()
+                });
 
-        // Loop through color attachments.
+            color_attachments_info.push(rendering_attachment.build());
+        }
 
-        let mut depth_attachment_info = vk::RenderingAttachmentInfo::builder();
+        // let depth_attachment_info = rendering_state.depth_attachment.map(|attachment| {
+        //     vk::RenderingAttachmentInfo::builder()
+        //         .image_view(attachment.image_view)
+        //         .image_layout(attachment.image_layout)
+        //         .resolve_mode(vk::ResolveModeFlags::NONE)
+        //         .load_op(attachment.depth_operation.vk_attachment_load_op())
+        //         .store_op(vk::AttachmentStoreOp::STORE)
+        //         .clear_value(
+        //             if attachment.depth_operation == RenderPassOperation::Clear {
+        //                 vk::ClearValue {
+        //                     depth_stencil: attachment.clear_value,
+        //                 }
+        //             } else {
+        //                 vk::ClearValue::default()
+        //             },
+        //         )
+        // });
 
-        let mut rendering_info = vk::RenderingInfo::builder()
+        let rendering_info = vk::RenderingInfo::builder()
             .flags(if self.is_secondary {
                 vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
             } else {
                 vk::RenderingFlags::empty()
             })
-            .color_attachments(&color_attachments_info);
-        // .render_area();
-
-        if contains_depth {
-            rendering_info = rendering_info.depth_attachment(&depth_attachment_info);
-        }
+            .color_attachments(&color_attachments_info)
+            .render_area(vk::Rect2D {
+                extent: vk::Extent2D {
+                    width: rendering_state.width,
+                    height: rendering_state.height,
+                },
+                offset: vk::Offset2D { x: 0, y: 0 },
+            })
+            .layer_count(1);
 
         unsafe {
             self.device
@@ -484,9 +519,19 @@ impl CommandBuffer {
             );
         }
 
-        // begin rendering
+        let color_attachment = RenderColorAttachment::new()
+            .set_clear_value(vk::ClearColorValue {
+                float32: [1.0, 0.0, 0.0, 1.0],
+            })
+            .set_operation(RenderPassOperation::Clear)
+            .set_image_view(swapchain.current_image_view())
+            .set_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        let rendering_state =
+            RenderingState::new(swapchain.extent().width, swapchain.extent().height)
+                .add_color_attachment(color_attachment);
+        self.begin_rendering(rendering_state);
 
-        // end rendering
+        self.end_rendering();
 
         let image_memory_barrier = vk::ImageMemoryBarrier::builder()
             .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
