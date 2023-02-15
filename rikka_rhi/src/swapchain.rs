@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ash::{extensions::khr, vk};
 
 use crate::{
@@ -180,7 +180,9 @@ impl Swapchain {
             image_views: Vec::new(),
         };
 
-        swapchain.init_images()?;
+        swapchain
+            .init_images()
+            .with_context(|| (format!("Failed to initialize swapchain images!")))?;
 
         Ok(swapchain)
     }
@@ -248,12 +250,9 @@ impl Swapchain {
     pub fn destroy(&mut self) {
         if !self.image_views.is_empty() {
             unsafe {
-                for image_view in &self.image_views {
-                    self.device
-                        .raw()
-                        .destroy_image_view(image_view.clone(), None);
+                for image_view in self.image_views.drain(..) {
+                    self.device.raw().destroy_image_view(image_view, None);
                 }
-                self.image_views.clear();
 
                 self.ash_swapchain
                     .destroy_swapchain(self.vulkan_swapchain, None);
@@ -261,6 +260,7 @@ impl Swapchain {
         }
     }
 
+    // XXX: Do not depend on self here
     fn init_images(&mut self) -> Result<()> {
         let images = unsafe {
             self.ash_swapchain

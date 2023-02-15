@@ -223,6 +223,7 @@ impl FrameSynchronizationManager {
     // XXX: Put this logic somwhere else?
     pub fn submit_graphics_command_buffers(
         &self,
+        // XXX: Change to accept array instead of vec
         command_buffers: &Vec<Weak<CommandBuffer>>,
         queue: &Queue,
     ) -> Result<()> {

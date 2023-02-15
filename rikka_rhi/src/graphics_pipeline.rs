@@ -50,7 +50,9 @@ impl RenderPassOperation {
 }
 
 pub struct RenderColorAttachment {
+    // XXX: Not needed for dynamic rendering(needed for VkRenderPass however). Remove?
     pub format: vk::Format,
+
     pub image_layout: vk::ImageLayout,
     pub operation: RenderPassOperation,
     pub clear_value: vk::ClearColorValue,
@@ -97,7 +99,9 @@ impl RenderColorAttachment {
 }
 
 pub struct RenderDepthStencilAttachment {
+    // XXX: Not needed for dynamic rendering(needed for VkRenderPass however). Remove?
     pub format: vk::Format,
+
     pub image_layout: vk::ImageLayout,
     pub depth_operation: RenderPassOperation,
     pub stencil_operation: RenderPassOperation,

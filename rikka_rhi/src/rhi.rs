@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, Weak};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ash::vk;
 use gpu_allocator::{
     vulkan::{Allocator, AllocatorCreateDesc},
@@ -160,38 +160,9 @@ impl RHIContext {
         })
     }
 
-    // pub fn create_buffer(&self, desc: BufferDesc) -> Result<Buffer, BufferCreationError> {
-    //     todo!()
-    // }
-
-    // pub fn create_texture(&self, desc: TextureDesc) -> Result<Texture, TextureCreationError> {
-    //     todo!()
-    // }
-
-    // pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Sampler, SamplerCreationError> {
-    //     todo!()
-    // }
-
-    // pub fn create_shader_state(
-    //     &self,
-    //     desc: ShaderStateDesc,
-    // ) -> Result<ShaderState, ShaderStateCreationError> {
-    //     todo!()
-    // }
-
-    // pub fn create_descriptor_set(
-    //     &self,
-    //     desc: DescriptorSetDesc,
-    // ) -> Result<DescriptorSetDesc, DescriptorSetCreationError> {
-    //     todo!()
-    // }
-
-    // pub fn create_graphics_pipeline(
-    //     &self,
-    //     desc: GraphicsPipelineDesc,
-    // ) -> Result<GraphicsPipeline, GraphicsPipelineCreationError> {
-    //     todo!()
-    // }
+    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Buffer> {
+        Buffer::new(self.device.clone(), self.allocator.clone(), desc)
+    }
 
     pub fn new_frame(&mut self) -> Result<()> {
         self.frame_synchronization_manager
@@ -239,38 +210,21 @@ impl RHIContext {
             &self.physical_device,
             &self.device,
             SwapchainDesc::new(u32::MAX, u32::MAX, 0, 0),
-        )?;
-
-        // Wait on image acquired semaphore.
-        let semaphores = [self
-            .frame_synchronization_manager
-            .swapchain_image_acquired_semaphore()
-            .raw()];
-
-        let submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(&semaphores)
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE])
-            .build();
-
-        unsafe {
-            self.device.raw().queue_submit(
-                self.graphics_queue.raw_clone(),
-                &[submit_info],
-                vk::Fence::null(),
-            )?
-        }
+        )
+        .with_context(|| format!("recreate_swapchain: Failed to create new swapchain!"))?;
 
         Ok(())
     }
 
-    pub fn present(&mut self) -> Result<(bool)> {
+    pub fn present(&mut self) -> Result<bool> {
         let wait_semaphores = [self
             .frame_synchronization_manager
             .current_render_complete_semaphore()];
 
         let present_result = self
             .swapchain
-            .queue_present(&wait_semaphores, &self.graphics_queue)?;
+            .queue_present(&wait_semaphores, &self.graphics_queue)
+            .with_context(|| (format!("Failed swapchain presentation!")))?;
 
         // XXX: Properly handle failed presentation case.
         // assert!(present_result);

@@ -1,4 +1,3 @@
-use log::{debug, error, info, log_enabled, warn, Level};
 use std::{
     mem::swap,
     sync::{Arc, Mutex, Weak},
@@ -168,11 +167,11 @@ impl CommandBufferManager {
             }
         }
 
-        info!(
+        log::info!(
             "Total number of primary (graphics) command buffers: {}",
             command_buffers.len()
         );
-        info!(
+        log::info!(
             "Total number of secondary (graphics) command buffers: {}",
             secondary_command_buffers.len()
         );
@@ -293,7 +292,6 @@ pub struct CommandBuffer {
 
     pub(crate) is_recording: bool,
     pub(crate) is_secondary: bool,
-
     meta_data: CommandBufferMetaData,
     // Reference to pipeline?
     // pipeline: vk::Pipeline,
@@ -322,12 +320,6 @@ impl CommandBuffer {
 
     pub fn begin(&mut self) -> Result<()> {
         if !self.is_recording {
-            // unsafe {
-            //     self.device
-            //         .raw()
-            //         .reset_command_buffer(self.raw, vk::CommandBufferResetFlags::empty())?
-            // };
-
             let begin_info = vk::CommandBufferBeginInfo::builder()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             unsafe {
@@ -337,7 +329,7 @@ impl CommandBuffer {
             };
             self.is_recording = true;
         } else {
-            warn!("Called begin to command buffer that is already recording!");
+            log::warn!("Called begin to command buffer that is already recording!");
         }
 
         Ok(())
@@ -348,7 +340,7 @@ impl CommandBuffer {
             unsafe { self.device.raw().end_command_buffer(self.raw)? };
             self.is_recording = false;
         } else {
-            warn!("Called end to command buffer that is not recording!");
+            log::warn!("Called end to command buffer that is not recording!");
         }
 
         Ok(())
@@ -377,23 +369,28 @@ impl CommandBuffer {
             color_attachments_info.push(rendering_attachment.build());
         }
 
-        // let depth_attachment_info = rendering_state.depth_attachment.map(|attachment| {
-        //     vk::RenderingAttachmentInfo::builder()
-        //         .image_view(attachment.image_view)
-        //         .image_layout(attachment.image_layout)
-        //         .resolve_mode(vk::ResolveModeFlags::NONE)
-        //         .load_op(attachment.depth_operation.vk_attachment_load_op())
-        //         .store_op(vk::AttachmentStoreOp::STORE)
-        //         .clear_value(
-        //             if attachment.depth_operation == RenderPassOperation::Clear {
-        //                 vk::ClearValue {
-        //                     depth_stencil: attachment.clear_value,
-        //                 }
-        //             } else {
-        //                 vk::ClearValue::default()
-        //             },
-        //         )
-        // });
+        let depth_attachment_info = {
+            if rendering_state.depth_attachment.is_some() {
+                let attachment = rendering_state.depth_attachment.unwrap();
+                vk::RenderingAttachmentInfo::builder()
+                    .image_view(attachment.image_view)
+                    .image_layout(attachment.image_layout)
+                    .resolve_mode(vk::ResolveModeFlags::NONE)
+                    .load_op(attachment.depth_operation.vk_attachment_load_op())
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(
+                        if attachment.depth_operation == RenderPassOperation::Clear {
+                            vk::ClearValue {
+                                depth_stencil: attachment.clear_value,
+                            }
+                        } else {
+                            vk::ClearValue::default()
+                        },
+                    )
+            } else {
+                vk::RenderingAttachmentInfo::builder()
+            }
+        };
 
         let rendering_info = vk::RenderingInfo::builder()
             .flags(if self.is_secondary {
@@ -402,6 +399,7 @@ impl CommandBuffer {
                 vk::RenderingFlags::empty()
             })
             .color_attachments(&color_attachments_info)
+            .depth_attachment(&depth_attachment_info)
             .render_area(vk::Rect2D {
                 extent: vk::Extent2D {
                     width: rendering_state.width,
@@ -433,8 +431,6 @@ impl CommandBuffer {
             );
         }
     }
-
-    // Clear functions handled by RenderPassState?
 
     pub fn draw(
         &self,

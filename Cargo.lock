@@ -946,6 +946,7 @@ dependencies = [
  "anyhow",
  "ash",
  "ash-window",
+ "bitflags",
  "env_logger",
  "gpu-allocator",
  "log",

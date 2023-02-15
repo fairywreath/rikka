@@ -25,6 +25,16 @@ fn main() {
     let mut rhi = rikka_rhi::RHIContext::new(rikka_rhi::RHICreationDesc::new(&window, &window))
         .expect("Error creating RHIContext!");
 
+    {
+        let buffer = rhi
+            .create_buffer(
+                rikka_rhi::BufferDesc::new()
+                    .set_size(512)
+                    .set_usage_flags(rikka_rhi::ash::vk::BufferUsageFlags::STORAGE_BUFFER),
+            )
+            .unwrap();
+    }
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
@@ -46,22 +56,23 @@ fn main() {
         Event::MainEventsCleared => {
             rhi.new_frame().unwrap();
 
-            let acquire_result = rhi.swapchain_acquire_next_image().unwrap();
+            let acquire_result = rhi.swapchain_acquire_next_image();
 
-            if acquire_result {
-                let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();
+            match acquire_result {
+                Ok(_) => {
+                    let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();
 
-                command_buffer
-                    .test_record_commands(rhi.swapchain())
-                    .unwrap();
+                    command_buffer.test_record_commands(rhi.swapchain());
 
-                rhi.submit_graphics_command_buffer(Arc::downgrade(&command_buffer))
-                    .unwrap();
-                rhi.present().unwrap();
-            } else {
-                rhi.recreate_swapchain()
-                    .expect("Failed to recreate swapchain!");
-                rhi.advance_frame_counters();
+                    rhi.submit_graphics_command_buffer(Arc::downgrade(&command_buffer));
+
+                    rhi.present();
+                }
+                Err(_) => {
+                    rhi.recreate_swapchain()
+                        .expect("Failed to recreate swapchain!");
+                    rhi.advance_frame_counters();
+                }
             }
         }
         _ => {}
