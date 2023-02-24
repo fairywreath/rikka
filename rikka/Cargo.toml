@@ -10,4 +10,4 @@ env_logger = "0.10.0"
 log = "0.4.17"
 winit = "0.27.5"
 
-rikka_rhi = { path = "../rikka_rhi" }
+rikka_gpu = { path = "../rikka_gpu" }

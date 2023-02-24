@@ -1,4 +1,4 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use anyhow::Result;
 use ash::vk;
@@ -89,25 +89,26 @@ impl Queue {
 
     pub fn submit(
         &self,
-        command_buffers: &Vec<Weak<CommandBuffer>>,
+        command_buffers: &[&CommandBuffer],
         wait_semaphores: Vec<SemaphoreSubmitInfo>,
         signal_semaphores: Vec<SemaphoreSubmitInfo>,
     ) -> Result<()> {
         let wait_semaphores_info = wait_semaphores
             .iter()
             .map(|submit_info| {
-                let mut semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+                let semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
                     .semaphore(submit_info.semaphore.raw_clone())
                     .stage_mask(submit_info.stage_mask)
-                    .value(0);
-
-                if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
-                    semaphore_submit_info = semaphore_submit_info.value(
-                        submit_info
-                            .value
-                            .expect("Timeline wait semaphore requires a value!"),
+                    .value(
+                        if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
+                            submit_info
+                                .value
+                                .expect("Timeline semaphore requires a value!")
+                        } else {
+                            0
+                        },
                     );
-                }
+
                 semaphore_submit_info.build()
             })
             .collect::<Vec<_>>();
@@ -115,18 +116,19 @@ impl Queue {
         let signal_semaphores_info = signal_semaphores
             .iter()
             .map(|submit_info| {
-                let mut semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+                let semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
                     .semaphore(submit_info.semaphore.raw_clone())
                     .stage_mask(submit_info.stage_mask)
-                    .value(0);
-
-                if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
-                    semaphore_submit_info = semaphore_submit_info.value(
-                        submit_info
-                            .value
-                            .expect("Timeline signal semaphore requires a value!"),
+                    .value(
+                        if submit_info.semaphore.semaphore_type() == SemaphoreType::Timeline {
+                            submit_info
+                                .value
+                                .expect("Timeline semaphore requires a value!")
+                        } else {
+                            0
+                        },
                     );
-                }
+
                 semaphore_submit_info.build()
             })
             .collect::<Vec<_>>();
@@ -135,7 +137,7 @@ impl Queue {
             .iter()
             .map(|command_buffer| {
                 vk::CommandBufferSubmitInfo::builder()
-                    .command_buffer(command_buffer.upgrade().unwrap().raw())
+                    .command_buffer(command_buffer.raw())
                     .build()
             })
             .collect::<Vec<_>>();
@@ -157,7 +159,7 @@ impl Queue {
         Ok(())
     }
 
-    pub fn raw_clone(&self) -> vk::Queue {
+    pub fn raw(&self) -> vk::Queue {
         self.raw.clone()
     }
 

@@ -2,7 +2,6 @@
 
 members = [
     "rikka",
-    "rikka_renderer",
-    "rikka_rhi",
+    "rikka_gpu",
     "rikka_shader",
 ]

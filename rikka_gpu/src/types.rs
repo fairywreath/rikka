@@ -1,24 +1,31 @@
-use log::{debug, error, info, log_enabled, warn, Level};
-use std::sync::Arc;
-
-use anyhow::{anyhow, Result};
 use ash::vk;
 
-use crate::{
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-};
+pub enum PipelineStage {
+    DrawIndirect,
+    VertexInput,
+    VertexShader,
+    FragmentShader,
+    RenderTarget,
+    ComputeShader,
+    Transfer,
+}
 
+pub enum ResourceUsageType {
+    Immutable,
+    Dynamic,
+    Stream,
+    Staging,
+}
+
+#[derive(Copy, Clone)]
 pub struct BlendState {
     pub source_color: vk::BlendFactor,
     pub destination_color: vk::BlendFactor,
     pub color_operation: vk::BlendOp,
 
     pub source_alpha: vk::BlendFactor,
-    pub dest_alpha: vk::BlendFactor,
-    pub blend_operation: vk::BlendOp,
+    pub destination_alpha: vk::BlendFactor,
+    pub alpha_operation: vk::BlendOp,
 
     pub enable: bool,
 
@@ -27,8 +34,111 @@ pub struct BlendState {
 }
 
 impl BlendState {
-    pub fn default() -> Self {
+    pub fn new() -> Self {
         todo!()
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct VertexAttribute {
+    pub location: u32,
+    pub binding: u32,
+    pub offset: u32,
+    pub format: vk::Format,
+}
+
+#[derive(Copy, Clone)]
+pub struct VertexStream {
+    pub binding: u32,
+    pub stride: u32,
+    pub input_rate: vk::VertexInputRate,
+}
+
+#[derive(Clone)]
+pub struct VertexInputState {
+    pub vertex_attributes: Vec<VertexAttribute>,
+    pub vertex_streams: Vec<VertexStream>,
+}
+
+impl VertexInputState {
+    pub fn new() -> Self {
+        Self {
+            vertex_attributes: vec![],
+            vertex_streams: vec![],
+        }
+    }
+
+    pub fn add_vertex_attribute(&mut self, vertex_attribute: VertexAttribute) {
+        self.vertex_attributes.push(vertex_attribute);
+    }
+
+    pub fn add_vertex_stream(&mut self, vertex_stream: VertexStream) {
+        self.vertex_streams.push(vertex_stream);
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct RasterizationState {
+    pub cull_mode: vk::CullModeFlags,
+    pub front_face: vk::FrontFace,
+    pub polygon_mode: vk::PolygonMode,
+}
+
+impl RasterizationState {
+    pub fn new() -> Self {
+        Self {
+            cull_mode: vk::CullModeFlags::NONE,
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            polygon_mode: vk::PolygonMode::FILL,
+        }
+    }
+
+    pub fn set_cull_mode(mut self, cull_mode: vk::CullModeFlags) -> Self {
+        self.cull_mode = cull_mode;
+        self
+    }
+
+    pub fn set_front_face(mut self, front_face: vk::FrontFace) -> Self {
+        self.front_face = front_face;
+        self
+    }
+
+    pub fn set_polygon_mode(mut self, polygon_mode: vk::PolygonMode) -> Self {
+        self.polygon_mode = polygon_mode;
+        self
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct DepthStencilState {
+    pub depth_test_enable: bool,
+    pub depth_write_enable: bool,
+    pub depth_compare: vk::CompareOp,
+    // XXX: Add stencil states
+}
+
+impl DepthStencilState {
+    pub fn new() -> Self {
+        Self {
+            depth_test_enable: false,
+            depth_write_enable: false,
+            depth_compare: vk::CompareOp::LESS,
+        }
+    }
+
+    pub fn set_depth_test(mut self, enable: bool) -> Self {
+        self.depth_test_enable = enable;
+        self
+    }
+
+    pub fn set_depth_write(mut self, enable: bool) -> Self {
+        self.depth_write_enable = enable;
+        self
+    }
+
+    pub fn set_depth_compare(mut self, depth_compare: vk::CompareOp) -> Self {
+        self.depth_compare = depth_compare;
+        self
     }
 }
 
@@ -49,6 +159,7 @@ impl RenderPassOperation {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct RenderColorAttachment {
     // XXX: Not needed for dynamic rendering(needed for VkRenderPass however). Remove?
     pub format: vk::Format,
@@ -98,6 +209,7 @@ impl RenderColorAttachment {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct RenderDepthStencilAttachment {
     // XXX: Not needed for dynamic rendering(needed for VkRenderPass however). Remove?
     pub format: vk::Format,
@@ -154,6 +266,7 @@ impl RenderDepthStencilAttachment {
     }
 }
 
+#[derive(Clone)]
 pub struct RenderingState {
     pub color_attachments: Vec<RenderColorAttachment>,
     pub depth_attachment: Option<RenderDepthStencilAttachment>,
@@ -173,6 +286,15 @@ impl RenderingState {
         }
     }
 
+    pub fn new_dimensionless() -> Self {
+        RenderingState {
+            width: 1,
+            height: 1,
+            color_attachments: Vec::new(),
+            depth_attachment: None,
+        }
+    }
+
     pub fn add_color_attachment(mut self, attachment: RenderColorAttachment) -> Self {
         self.color_attachments.push(attachment);
         self
@@ -183,16 +305,3 @@ impl RenderingState {
         self
     }
 }
-
-pub struct GraphicsPipelineDesc {}
-pub struct GraphicsPipeline {
-    raw: vk::Pipeline,
-}
-
-impl GraphicsPipeline {
-    pub fn raw(&self) -> vk::Pipeline {
-        self.raw
-    }
-}
-
-pub struct GraphicsPipelineCreationError {}

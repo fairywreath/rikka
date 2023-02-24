@@ -16,8 +16,7 @@ use crate::{
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     device::Device,
     frame::{self, FrameThreadPoolsManager},
-    graphics_pipeline::*,
-    rhi::RHIContext,
+    pipeline::*,
     types::*,
 };
 
@@ -29,7 +28,6 @@ pub struct SamplerDesc {
     pub address_mode_v: vk::SamplerAddressMode,
     pub address_mode_w: vk::SamplerAddressMode,
     pub reduction_mode: vk::SamplerReductionMode,
-    // name: String
 }
 
 impl SamplerDesc {

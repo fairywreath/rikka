@@ -16,10 +16,15 @@ use crate::{
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     device::Device,
     frame::{self, FrameThreadPoolsManager},
-    graphics_pipeline::*,
-    rhi::RHIContext,
+    pipeline::*,
     types::*,
 };
+
+pub enum BufferLocation {
+    GpuOnly,
+    CpuToGpu,
+    PersistentMapped,
+}
 
 pub struct BufferDesc {
     pub usage_flags: vk::BufferUsageFlags,
@@ -155,6 +160,8 @@ impl Drop for Buffer {
             .unwrap()
             .free(self.allocation.take().unwrap())
             .unwrap();
+
+        log::info!("Buffer dropped");
     }
 }
 

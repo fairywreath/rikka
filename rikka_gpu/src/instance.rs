@@ -1,7 +1,4 @@
-use std::{
-    ffi::{c_void, CStr, CString},
-    fmt::Debug,
-};
+use std::ffi::{c_void, CStr, CString};
 
 use anyhow::Result;
 use ash::{extensions::ext::DebugUtils, vk};
@@ -80,10 +77,6 @@ impl Instance {
 
     pub fn raw(&self) -> &ash::Instance {
         &self.instance
-    }
-
-    pub fn raw_clone(&self) -> ash::Instance {
-        self.instance.clone()
     }
 
     pub fn get_physical_devices(&mut self, surface: &Surface) -> Result<&Vec<PhysicalDevice>> {

@@ -61,8 +61,8 @@ impl Swapchain {
         let surface_format = {
             let formats = unsafe {
                 surface.raw().get_physical_device_surface_formats(
-                    physical_device.raw_clone(),
-                    surface.vulkan(),
+                    physical_device.raw(),
+                    surface.raw_vulkan(),
                 )?
             };
 
@@ -85,8 +85,8 @@ impl Swapchain {
         let present_mode = {
             let present_modes = unsafe {
                 surface.raw().get_physical_device_surface_present_modes(
-                    physical_device.raw_clone(),
-                    surface.vulkan(),
+                    physical_device.raw(),
+                    surface.raw_vulkan(),
                 )?
             };
 
@@ -100,8 +100,8 @@ impl Swapchain {
         // Get surface capabilities.
         let capabilities = unsafe {
             surface.raw().get_physical_device_surface_capabilities(
-                physical_device.raw_clone(),
-                surface.vulkan(),
+                physical_device.raw(),
+                surface.raw_vulkan(),
             )?
         };
 
@@ -133,7 +133,7 @@ impl Swapchain {
 
         let create_info = {
             let mut info = vk::SwapchainCreateInfoKHR::builder()
-                .surface(surface.vulkan())
+                .surface(surface.raw_vulkan())
                 .min_image_count(image_count)
                 .image_format(surface_format.format)
                 .image_color_space(surface_format.color_space)
@@ -217,7 +217,7 @@ impl Swapchain {
 
         let result = unsafe {
             self.ash_swapchain
-                .queue_present(queue.raw_clone(), &present_info)?
+                .queue_present(queue.raw(), &present_info)?
         };
 
         Ok(result)

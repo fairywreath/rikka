@@ -9,27 +9,26 @@ use gpu_allocator::{
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{
+    buffer::*,
     command_buffer::*,
+    constants,
     device::Device,
     frame::*,
-    frame::{FrameThreadPools, FrameThreadPoolsManager},
+    instance::Instance,
     physical_device::PhysicalDevice,
+    pipeline::*,
     queue::{Queue, QueueFamily, QueueFamilyIndices},
+    sampler::*,
+    shader_state::*,
     surface::Surface,
     swapchain::{Swapchain, SwapchainDesc},
     synchronization::{Semaphore, SemaphoreType},
-    *,
 };
 
-pub struct RHIContext {
-    swapchain: Swapchain,
-
+pub struct Gpu {
     allocator: Arc<Mutex<Allocator>>,
 
-    graphics_queue: Queue,
-    present_queue: Queue,
-    compute_queue: Queue,
-    transfer_queue: Queue,
+    swapchain: Swapchain,
 
     command_buffer_manager: CommandBufferManager,
     frame_thread_pools_manager: FrameThreadPoolsManager,
@@ -37,7 +36,12 @@ pub struct RHIContext {
 
     physical_device: PhysicalDevice,
     device: Arc<Device>,
+
     queue_families: QueueFamilyIndices,
+    graphics_queue: Queue,
+    present_queue: Queue,
+    compute_queue: Queue,
+    transfer_queue: Queue,
 
     surface: Surface,
     instance: Instance,
@@ -45,12 +49,12 @@ pub struct RHIContext {
     entry: ash::Entry,
 }
 
-pub struct RHICreationDesc<'a> {
+pub struct GpuDesc<'a> {
     window_handle: &'a dyn HasRawWindowHandle,
     display_handle: &'a dyn HasRawDisplayHandle,
 }
 
-impl<'a> RHICreationDesc<'a> {
+impl<'a> GpuDesc<'a> {
     pub fn new(
         window_handle: &'a dyn HasRawWindowHandle,
         display_handle: &'a dyn HasRawDisplayHandle,
@@ -62,8 +66,8 @@ impl<'a> RHICreationDesc<'a> {
     }
 }
 
-impl RHIContext {
-    pub fn new(desc: RHICreationDesc) -> Result<Self> {
+impl Gpu {
+    pub fn new(desc: GpuDesc) -> Result<Self> {
         let entry = unsafe { ash::Entry::load()? };
         let mut instance = Instance::new(&entry, &desc.display_handle)?;
         let surface = Surface::new(&entry, &instance, &desc.window_handle, &desc.display_handle)?;
@@ -71,26 +75,24 @@ impl RHIContext {
         let physical_devices = instance.get_physical_devices(&surface)?;
         let physical_device = select_suitable_physical_device(&physical_devices)?;
 
-        println!("GPU name: {}", physical_device.name);
+        log::info!("GPU name: {}", physical_device.name);
 
         let queue_families = select_queue_family_indices(&physical_device);
 
-        println!("Graphics family: {}", queue_families.graphics.index());
-        println!("Present family: {}", queue_families.present.index());
-        println!("Compute family: {}", queue_families.compute.index());
-        println!("Transfer family: {}", queue_families.transfer.index());
-
-        let queue_families_array = [
-            queue_families.graphics,
-            queue_families.compute,
-            queue_families.transfer,
-            queue_families.compute,
-        ];
+        log::info!("Graphics family: {}", queue_families.graphics.index());
+        log::info!("Present family: {}", queue_families.present.index());
+        log::info!("Compute family: {}", queue_families.compute.index());
+        log::info!("Transfer family: {}", queue_families.transfer.index());
 
         let device = Arc::new(Device::new(
             &instance,
             &physical_device,
-            &queue_families_array,
+            &[
+                queue_families.graphics,
+                queue_families.compute,
+                queue_families.transfer,
+                queue_families.compute,
+            ],
         )?);
 
         let graphics_queue = device.get_queue(queue_families.graphics, 0);
@@ -99,9 +101,9 @@ impl RHIContext {
         let transfer_queue = device.get_queue(queue_families.transfer, 0);
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
-            instance: instance.raw_clone(),
-            device: device.raw_clone(),
-            physical_device: physical_device.raw_clone(),
+            instance: instance.raw().clone(),
+            device: device.raw().clone(),
+            physical_device: physical_device.raw(),
             debug_settings: AllocatorDebugSettings {
                 log_memory_information: true,
                 log_leaks_on_shutdown: true,
@@ -126,8 +128,9 @@ impl RHIContext {
 
         let frame_thread_pools_manager = FrameThreadPoolsManager::new(
             device.clone(),
-            frame::FrameThreadPoolsDesc {
+            FrameThreadPoolsDesc {
                 num_threads: 1,
+                num_frames: constants::MAX_FRAMES,
                 time_queries_per_frame: 32,
                 graphics_queue_family_index: graphics_queue.family_index(),
             },
@@ -164,6 +167,18 @@ impl RHIContext {
         Buffer::new(self.device.clone(), self.allocator.clone(), desc)
     }
 
+    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Sampler> {
+        Sampler::new(self.device.clone(), desc)
+    }
+
+    pub fn create_shader_state(&self, desc: ShaderStateDesc) -> Result<ShaderState> {
+        ShaderState::new(self.device.clone(), desc)
+    }
+
+    pub fn create_graphics_pipeline(&self, desc: GraphicsPipelineDesc) -> Result<GraphicsPipeline> {
+        GraphicsPipeline::new(self.device.clone(), desc)
+    }
+
     pub fn new_frame(&mut self) -> Result<()> {
         self.frame_synchronization_manager
             .wait_graphics_compute_semaphores()?;
@@ -184,7 +199,9 @@ impl RHIContext {
         &self,
         command_buffer: Weak<CommandBuffer>,
     ) -> Result<()> {
-        let command_buffers = vec![command_buffer];
+        let command_buffer = command_buffer.upgrade().unwrap();
+        let command_buffers = vec![command_buffer.as_ref()];
+
         self.frame_synchronization_manager
             .submit_graphics_command_buffers(&command_buffers, &self.graphics_queue)?;
 
@@ -261,16 +278,19 @@ impl RHIContext {
     }
 }
 
-impl Drop for RHIContext {
+impl Drop for Gpu {
     fn drop(&mut self) {
         unsafe {
             self.device
                 .raw()
-                .queue_wait_idle(self.graphics_queue.raw_clone())
+                .queue_wait_idle(self.graphics_queue.raw())
                 .unwrap()
         }
+
+        log::info!("GPU dropped");
     }
 }
+
 fn select_suitable_physical_device(devices: &[PhysicalDevice]) -> Result<PhysicalDevice> {
     // XXX TODO: Check required extensions and queue support
 

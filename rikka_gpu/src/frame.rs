@@ -1,4 +1,3 @@
-use core::num;
 use std::sync::{Arc, Weak};
 
 use anyhow::Result;
@@ -10,12 +9,10 @@ use crate::{
     device::Device,
     query::{PipelineStatsQueryPool, TimestampQueryPool},
     queue::*,
-    swapchain::*,
     synchronization::*,
 };
 
 pub struct FrameThreadPools {
-    // Graphics and present command pool.
     pub command_pool: CommandPool,
     pub timestamp_query_pool: TimestampQueryPool,
     pub pipeline_stats_query_pool: PipelineStatsQueryPool,
@@ -23,6 +20,7 @@ pub struct FrameThreadPools {
 
 pub struct FrameThreadPoolsDesc {
     pub num_threads: u32,
+    pub num_frames: u32,
     pub time_queries_per_frame: u32,
     pub graphics_queue_family_index: u32,
 }
@@ -30,20 +28,19 @@ pub struct FrameThreadPoolsDesc {
 pub struct FrameThreadPoolsManager {
     device: Arc<Device>,
     frame_thread_pools: Vec<FrameThreadPools>,
-
+    num_frames: u32,
     num_threads: u32,
     time_queries_per_frame: u32,
 }
 
 impl FrameThreadPoolsManager {
     pub fn new(device: Arc<Device>, desc: FrameThreadPoolsDesc) -> Result<Self> {
-        let num_pools = desc.num_threads * constants::MAX_FRAMES;
+        let num_pools = desc.num_frames * desc.num_threads;
 
         let mut frame_thread_pools: Vec<FrameThreadPools> = vec![];
         frame_thread_pools.reserve(num_pools as usize);
 
         for _ in 0..num_pools {
-            // XXX: Use graphics queue only for all command buffers?
             let command_pool = CommandPool::new(device.clone(), desc.graphics_queue_family_index)?;
             let timestamp_query_pool =
                 TimestampQueryPool::new(device.clone(), desc.time_queries_per_frame)?;
@@ -59,6 +56,7 @@ impl FrameThreadPoolsManager {
         Ok(Self {
             device,
             frame_thread_pools,
+            num_frames: desc.num_frames,
             num_threads: desc.num_threads,
             time_queries_per_frame: desc.time_queries_per_frame,
         })
@@ -114,7 +112,7 @@ impl FrameSynchronizationManager {
     pub(crate) fn new(device: Arc<Device>) -> Result<Self> {
         let mut render_complete_semaphores =
             Vec::<Semaphore>::with_capacity(constants::MAX_FRAMES as usize);
-        for i in 0..constants::MAX_FRAMES as usize {
+        for _ in 0..constants::MAX_FRAMES as usize {
             render_complete_semaphores.push(Semaphore::new(device.clone(), SemaphoreType::Binary)?);
         }
 
@@ -195,12 +193,6 @@ impl FrameSynchronizationManager {
         if self.frame_index_data.absolute >= constants::MAX_FRAMES as u64 {
             let graphics_wait_value = self.graphics_semaphore_wait_value();
 
-            let current_value = unsafe {
-                self.device
-                    .raw()
-                    .get_semaphore_counter_value(self.graphics_work_semaphore.raw())?
-            };
-
             let wait_values = [
                 graphics_wait_value,
                 // compute_wait_value
@@ -224,7 +216,7 @@ impl FrameSynchronizationManager {
     pub fn submit_graphics_command_buffers(
         &self,
         // XXX: Change to accept array instead of vec
-        command_buffers: &Vec<Weak<CommandBuffer>>,
+        command_buffers: &[&CommandBuffer],
         queue: &Queue,
     ) -> Result<()> {
         // Wait for a max of 1 image acuired semaphore + graphics + compute = 3 total.

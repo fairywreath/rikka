@@ -7,6 +7,9 @@ use winit::{
     window::WindowBuilder,
 };
 
+use rikka_gpu as gpu;
+use rikka_gpu::rikka_shader as shader;
+
 fn main() {
     let env = env_logger::Env::default()
         .filter_or("MY_LOG_LEVEL", "trace")
@@ -22,18 +25,47 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut rhi = rikka_rhi::RHIContext::new(rikka_rhi::RHICreationDesc::new(&window, &window))
-        .expect("Error creating RHIContext!");
+    let mut gpu = rikka_gpu::Gpu::new(rikka_gpu::GpuDesc::new(&window, &window))
+        .expect("Error creating Gpu!");
 
-    {
-        let buffer = rhi
-            .create_buffer(
-                rikka_rhi::BufferDesc::new()
-                    .set_size(512)
-                    .set_usage_flags(rikka_rhi::ash::vk::BufferUsageFlags::STORAGE_BUFFER),
+    // let buffer = gpu
+    //     .create_buffer(
+    //         rikka_gpu::BufferDesc::new()
+    //             .set_size(512)
+    //             .set_usage_flags(rikka_gpu::ash::vk::BufferUsageFlags::STORAGE_BUFFER),
+    //     )
+    //     .unwrap();
+
+    let graphics_pipeline = {
+        let shader_state = gpu
+            .create_shader_state(
+                rikka_gpu::ShaderStateDesc::new()
+                    .add_stage(gpu::ShaderStageDesc::new_from_source_file(
+                        "shaders/hardcoded_triangle.vert",
+                        gpu::ShaderStageType::Vertex,
+                    ))
+                    .add_stage(gpu::ShaderStageDesc::new_from_source_file(
+                        "shaders/simple.frag",
+                        gpu::ShaderStageType::Fragment,
+                    )),
             )
             .unwrap();
-    }
+
+        gpu.create_graphics_pipeline(
+            gpu::GraphicsPipelineDesc::new()
+                .set_shader_stages(shader_state.vulkan_shader_stages())
+                .set_extent(
+                    gpu.swapchain().extent().width,
+                    gpu.swapchain().extent().height,
+                )
+                .set_rendering_state(
+                    gpu::RenderingState::new_dimensionless().add_color_attachment(
+                        gpu::RenderColorAttachment::new().set_format(gpu.swapchain().format()),
+                    ),
+                ),
+        )
+        .unwrap()
+    };
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -54,24 +86,27 @@ fn main() {
         },
         // Render.
         Event::MainEventsCleared => {
-            rhi.new_frame().unwrap();
+            gpu.new_frame().unwrap();
 
-            let acquire_result = rhi.swapchain_acquire_next_image();
+            let acquire_result = gpu.swapchain_acquire_next_image();
 
             match acquire_result {
                 Ok(_) => {
-                    let command_buffer = rhi.current_command_buffer(0).unwrap().upgrade().unwrap();
+                    let command_buffer = gpu.current_command_buffer(0).unwrap().upgrade().unwrap();
 
-                    command_buffer.test_record_commands(rhi.swapchain());
+                    command_buffer
+                        .test_record_commands(gpu.swapchain(), &graphics_pipeline)
+                        .unwrap();
 
-                    rhi.submit_graphics_command_buffer(Arc::downgrade(&command_buffer));
+                    gpu.submit_graphics_command_buffer(Arc::downgrade(&command_buffer))
+                        .unwrap();
 
-                    rhi.present();
+                    gpu.present().unwrap();
                 }
                 Err(_) => {
-                    rhi.recreate_swapchain()
+                    gpu.recreate_swapchain()
                         .expect("Failed to recreate swapchain!");
-                    rhi.advance_frame_counters();
+                    gpu.advance_frame_counters();
                 }
             }
         }

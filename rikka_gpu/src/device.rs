@@ -4,15 +4,13 @@ use anyhow::Result;
 use ash::vk;
 
 use crate::{
-    deletion_queue::{self, DeferredDeletionQueue},
     instance::Instance,
-    physical_device::{self, PhysicalDevice},
+    physical_device::PhysicalDevice,
     queue::{Queue, QueueFamily},
 };
 
 pub struct Device {
     raw: ash::Device,
-    deletion_queue: DeferredDeletionQueue,
 }
 
 impl Device {
@@ -76,7 +74,7 @@ impl Device {
         unsafe {
             instance
                 .raw()
-                .get_physical_device_features2(physical_device.raw_clone(), &mut device_features2);
+                .get_physical_device_features2(physical_device.raw(), &mut device_features2);
         }
 
         // Set pNext chain.
@@ -95,35 +93,17 @@ impl Device {
         let device = unsafe {
             instance
                 .raw()
-                .create_device(physical_device.raw_clone(), &device_create_info, None)?
+                .create_device(physical_device.raw(), &device_create_info, None)?
         };
 
-        // Create deletion queue.
-        let deletion_queue = DeferredDeletionQueue {};
-
-        Ok(Self {
-            raw: device,
-            deletion_queue,
-        })
+        Ok(Self { raw: device })
     }
 
-    pub(crate) fn get_deletion_queue(&mut self) -> &mut DeferredDeletionQueue {
-        &mut self.deletion_queue
-    }
-
-    pub(crate) fn raw(&self) -> &ash::Device {
+    pub fn raw(&self) -> &ash::Device {
         &self.raw
     }
 
-    pub(crate) fn raw_clone(&self) -> ash::Device {
-        self.raw.clone()
-    }
-
-    pub(crate) fn get_queue(
-        self: &Arc<Self>,
-        queue_family: QueueFamily,
-        queue_index: u32,
-    ) -> Queue {
+    pub fn get_queue(self: &Arc<Self>, queue_family: QueueFamily, queue_index: u32) -> Queue {
         let raw = unsafe { self.raw.get_device_queue(queue_family.index(), queue_index) };
         Queue::new(self.clone(), raw, queue_family.index())
     }

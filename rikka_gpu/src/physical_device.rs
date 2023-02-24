@@ -45,7 +45,7 @@ impl PhysicalDevice {
                     surface.raw().get_physical_device_surface_support(
                         physical_device,
                         index as _,
-                        surface.vulkan(),
+                        surface.raw_vulkan(),
                     )?
                 };
                 Ok(QueueFamily::new(index as _, prop, present_support))
@@ -65,13 +65,13 @@ impl PhysicalDevice {
         let supported_surface_formats = unsafe {
             surface
                 .raw()
-                .get_physical_device_surface_formats(physical_device, surface.vulkan())?
+                .get_physical_device_surface_formats(physical_device, surface.raw_vulkan())?
         };
 
         let supported_present_modes = unsafe {
             surface
                 .raw()
-                .get_physical_device_surface_present_modes(physical_device, surface.vulkan())?
+                .get_physical_device_surface_present_modes(physical_device, surface.raw_vulkan())?
         };
 
         Ok(Self {
@@ -99,11 +99,7 @@ impl PhysicalDevice {
             .all(|ext| supported_extensions.contains(ext))
     }
 
-    pub fn raw(&self) -> &vk::PhysicalDevice {
-        &self.physical_device
-    }
-
-    pub fn raw_clone(&self) -> vk::PhysicalDevice {
-        self.physical_device.clone()
+    pub fn raw(&self) -> vk::PhysicalDevice {
+        self.physical_device
     }
 }

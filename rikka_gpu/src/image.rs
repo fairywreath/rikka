@@ -14,11 +14,9 @@ use gpu_allocator::{
 use crate::{
     barrier::ResourceState,
     command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     device::Device,
     frame::{self, FrameThreadPoolsManager},
-    graphics_pipeline::*,
-    rhi::RHIContext,
+    pipeline::*,
     types::*,
 };
 

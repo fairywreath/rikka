@@ -11,8 +11,9 @@ use crate::{
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     device::Device,
     frame::{self, FrameThreadPoolsManager},
-    graphics_pipeline::*,
+    pipeline::*,
     swapchain::Swapchain,
+    types::*,
 };
 
 pub struct CommandPool {
@@ -478,7 +479,11 @@ impl CommandBuffer {
         }
     }
 
-    pub fn test_record_commands(&self, swapchain: &Swapchain) -> Result<()> {
+    pub fn test_record_commands(
+        &self,
+        swapchain: &Swapchain,
+        graphics_pipeline: &GraphicsPipeline,
+    ) -> Result<()> {
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {
@@ -526,6 +531,9 @@ impl CommandBuffer {
             RenderingState::new(swapchain.extent().width, swapchain.extent().height)
                 .add_color_attachment(color_attachment);
         self.begin_rendering(rendering_state);
+
+        self.bind_graphics_pipeline(graphics_pipeline);
+        self.draw(3, 1, 0, 0);
 
         self.end_rendering();
 

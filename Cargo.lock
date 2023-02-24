@@ -461,9 +461,9 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.27.0"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec7af912d60cdbd3677c1af9352ebae6fb8394d165568a2234df0fa00f87793"
+checksum = "ad0a93d233ebf96623465aad4046a8d3aa4da22d4f4beba5388838c8a434bbb4"
 
 [[package]]
 name = "gpu-allocator"
@@ -780,9 +780,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.30.2"
+version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b8c786513eb403643f2a88c244c2aaa270ef2153f55094587d0c48a3cf22a83"
+checksum = "ea86265d3d3dcb6a27fc51bd29a4bf387fae9d2986b823079d4986af253eb439"
 dependencies = [
  "memchr",
 ]
@@ -931,16 +931,12 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
- "rikka_rhi",
+ "rikka_gpu",
  "winit",
 ]
 
 [[package]]
-name = "rikka_renderer"
-version = "0.1.0"
-
-[[package]]
-name = "rikka_rhi"
+name = "rikka_gpu"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -951,11 +947,17 @@ dependencies = [
  "gpu-allocator",
  "log",
  "raw-window-handle 0.5.0",
+ "rikka_shader",
 ]
 
 [[package]]
 name = "rikka_shader"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+]
 
 [[package]]
 name = "rustc-demangle"

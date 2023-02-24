@@ -37,7 +37,7 @@ impl Surface {
         &self.ash_surface
     }
 
-    pub fn vulkan(&self) -> vk::SurfaceKHR {
+    pub fn raw_vulkan(&self) -> vk::SurfaceKHR {
         self.vulkan_surface
     }
 }
