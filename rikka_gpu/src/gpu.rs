@@ -12,6 +12,7 @@ use crate::{
     buffer::*,
     command_buffer::*,
     constants,
+    descriptor_set::*,
     device::Device,
     frame::*,
     instance::Instance,
@@ -26,6 +27,10 @@ use crate::{
 };
 
 pub struct Gpu {
+    // XXX: Use escape/terminals for this?
+    global_descriptor_pool: Arc<DescriptorPool>,
+    bindless_descriptor_pool: Arc<DescriptorPool>,
+
     allocator: Arc<Mutex<Allocator>>,
 
     swapchain: Swapchain,
@@ -141,6 +146,72 @@ impl Gpu {
 
         let frame_synchronization_manager = FrameSynchronizationManager::new(device.clone())?;
 
+        let global_descriptor_pool = DescriptorPool::new(
+            device.clone(),
+            DescriptorPoolDesc::new()
+                .set_max_sets(constants::GLOBAL_DESCRIPTOR_POOL_MAX_SETS)
+                .add_pool_size(
+                    vk::DescriptorType::SAMPLER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_IMAGE,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_TEXEL_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::INPUT_ATTACHMENT,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                ),
+        )?;
+
+        let bindless_descriptor_pool = DescriptorPool::new(
+            device.clone(),
+            DescriptorPoolDesc::new()
+                .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+                // Only 1 set for all bindless images.
+                .set_max_sets(1)
+                .add_pool_size(
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    constants::MAX_NUM_BINDLESS_RESOURCECS,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::SAMPLER,
+                    constants::MAX_NUM_BINDLESS_RESOURCECS,
+                ),
+        )?;
+
         Ok(Self {
             surface,
             instance,
@@ -160,6 +231,9 @@ impl Gpu {
             command_buffer_manager,
             frame_thread_pools_manager,
             frame_synchronization_manager,
+
+            global_descriptor_pool: Arc::new(global_descriptor_pool),
+            bindless_descriptor_pool: Arc::new(bindless_descriptor_pool),
         })
     }
 
@@ -177,6 +251,19 @@ impl Gpu {
 
     pub fn create_graphics_pipeline(&self, desc: GraphicsPipelineDesc) -> Result<GraphicsPipeline> {
         GraphicsPipeline::new(self.device.clone(), desc)
+    }
+
+    pub fn create_descriptor_set_layout(
+        &self,
+        desc: DescriptorSetLayoutDesc,
+    ) -> Result<DescriptorSetLayout> {
+        DescriptorSetLayout::new(self.device.clone(), desc)
+    }
+
+    pub fn create_descriptor_set(&self, desc: DescriptorSetDesc) -> Result<DescriptorSet> {
+        // XXX: Always use internal global descriptor pool for now
+        let desc = desc.set_pool(self.global_descriptor_pool.clone());
+        DescriptorSet::new(self.device.clone(), desc)
     }
 
     pub fn new_frame(&mut self) -> Result<()> {

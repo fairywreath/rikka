@@ -75,6 +75,10 @@ impl Sampler {
 
         Ok(Self { device, raw, desc })
     }
+
+    pub fn raw(&self) -> vk::Sampler {
+        self.raw
+    }
 }
 
 impl Drop for Sampler {

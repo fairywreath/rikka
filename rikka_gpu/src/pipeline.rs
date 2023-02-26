@@ -25,12 +25,14 @@ pub struct GraphicsPipelineDesc {
     pub fragment_const_size: Option<u32>,
 
     pub shader_stages: Vec<vk::PipelineShaderStageCreateInfo>,
-    // XXX: Descriptor set layouts here
+
+    // XXX: Need a handle to the primary type `DescriptorSetLayout` here?
+    pub descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 
     // XXX: Handle to viewport state required?
     pub width: u32,
     pub height: u32,
-    // XXX: pipeline cache somewhere?
+    // XXX: pipeline cache somewhere? or handle this completely internally?
 }
 
 impl GraphicsPipelineDesc {
@@ -45,6 +47,7 @@ impl GraphicsPipelineDesc {
             vertex_const_size: None,
             fragment_const_size: None,
             shader_stages: vec![],
+            descriptor_set_layouts: vec![],
             width: 1,
             height: 1,
         }
@@ -68,22 +71,28 @@ impl GraphicsPipelineDesc {
         self.height = height;
         self
     }
+
+    pub fn set_descriptor_set_layouts(
+        mut self,
+        descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    ) -> Self {
+        self.descriptor_set_layouts = descriptor_set_layouts;
+        self
+    }
 }
 
 pub struct GraphicsPipeline {
     raw: vk::Pipeline,
     raw_layout: vk::PipelineLayout,
-    desc: GraphicsPipelineDesc,
     device: Arc<Device>,
+    // XXX: Do we need this?
+    desc: GraphicsPipelineDesc,
 }
 
 impl GraphicsPipeline {
     pub fn new(device: Arc<Device>, desc: GraphicsPipelineDesc) -> Result<Self> {
         // XXX: Create vulkan pipeline layout
         // XXX: Read layout from cache?
-
-        // XXX: Properly initialize descriptor set layouts
-        let descriptor_set_layouts = Vec::<vk::DescriptorSetLayout>::new();
 
         let push_constant_ranges = {
             let mut push_constant_ranges = Vec::<vk::PushConstantRange>::new();
@@ -110,7 +119,7 @@ impl GraphicsPipeline {
         };
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
-            .set_layouts(&descriptor_set_layouts)
+            .set_layouts(&desc.descriptor_set_layouts)
             .push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {
@@ -175,7 +184,11 @@ impl GraphicsPipeline {
 
         let color_blend_attachments = {
             if !desc.blend_states.is_empty() {
-                // XXX: Check length of blend states is equal to length of rendering state color attachments.
+                assert_eq!(
+                    desc.blend_states.len(),
+                    desc.rendering_state.color_attachments.len(),
+                );
+
                 let color_blend_attachments = desc
                     .blend_states
                     .iter()
@@ -303,6 +316,10 @@ impl GraphicsPipeline {
 
     pub fn raw(&self) -> vk::Pipeline {
         self.raw
+    }
+
+    pub fn raw_layout(&self) -> vk::PipelineLayout {
+        self.raw_layout
     }
 }
 

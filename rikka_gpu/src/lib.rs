@@ -7,6 +7,7 @@ mod command_buffer;
 mod constants;
 mod descriptor_set;
 mod device;
+mod escape;
 mod frame;
 mod gpu;
 mod image;
@@ -27,3 +28,10 @@ pub use gpu::*;
 pub use pipeline::*;
 pub use shader_state::*;
 pub use types::*;
+
+// XXX: dont wanna use pub use descriptor_set*.... :(
+pub use descriptor_set::{
+    DescriptorBinding, DescriptorSet, DescriptorSetBindingResource,
+    DescriptorSetBindingResourceType, DescriptorSetDesc, DescriptorSetLayout,
+    DescriptorSetLayoutDesc,
+};

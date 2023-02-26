@@ -87,23 +87,14 @@ impl ShaderState {
         let entry_point_name = CString::new("main").unwrap();
 
         for stage in &desc.stages {
-            let shader_module = unsafe { Self::create_shader_module(device.as_ref(), stage) };
-            match shader_module {
-                Ok(module) => {
-                    let stage_info = vk::PipelineShaderStageCreateInfo::builder()
-                        .stage(shader_stage_type_to_vk_flags(stage.shader_type))
-                        .module(module)
-                        .name(&entry_point_name)
-                        .build();
-                    raw_stages.push(stage_info);
-                }
-                Err(_) => {
-                    log::error!("Failed to create shader module!");
-                    unsafe { Self::destroy_shader_modules(device.as_ref(), &raw_stages) };
-
-                    return Err(anyhow::anyhow!("Failed to create shader modules!"));
-                }
-            }
+            let shader_module = unsafe { Self::create_shader_module(device.as_ref(), stage)? };
+            raw_stages.push(
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .stage(shader_stage_type_to_vk_flags(stage.shader_type))
+                    .module(shader_module)
+                    .name(&entry_point_name)
+                    .build(),
+            );
         }
 
         Ok(Self {

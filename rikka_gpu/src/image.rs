@@ -17,6 +17,7 @@ use crate::{
     device::Device,
     frame::{self, FrameThreadPoolsManager},
     pipeline::*,
+    sampler::Sampler,
     types::*,
 };
 
@@ -37,7 +38,7 @@ pub struct ImageDesc {
 pub struct Image {
     device: Arc<Device>,
 
-    aw: vk::Image,
+    raw: vk::Image,
     raw_view: vk::ImageView,
 
     allocator: Arc<Mutex<Allocator>>,
@@ -47,4 +48,23 @@ pub struct Image {
 
     desc: ImageDesc,
     // linked_sampler: Option<Handle<Sampler>>,
+    sampler: Option<Arc<Sampler>>,
+}
+
+impl Image {
+    pub fn raw(&self) -> vk::Image {
+        self.raw
+    }
+
+    pub fn raw_view(&self) -> vk::ImageView {
+        self.raw_view
+    }
+
+    pub fn has_linked_sampler(&self) -> bool {
+        self.sampler.is_some()
+    }
+
+    pub fn linked_sampler(&self) -> Option<Arc<Sampler>> {
+        self.sampler.clone()
+    }
 }

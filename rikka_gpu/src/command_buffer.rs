@@ -9,6 +9,7 @@ use ash::vk::{self, RenderingAttachmentInfo};
 use crate::{
     command_buffer,
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
+    descriptor_set::DescriptorSet,
     device::Device,
     frame::{self, FrameThreadPoolsManager},
     pipeline::*,
@@ -433,6 +434,25 @@ impl CommandBuffer {
         }
     }
 
+    // XXX: Need to pass in pipeline layout :(, cache it somewhere inside command buffer? Command buffer will have to be mutable!
+    pub fn bind_descriptor_set(
+        &self,
+        descriptor_set: &DescriptorSet,
+        raw_pipeline_layout: vk::PipelineLayout,
+    ) {
+        unsafe {
+            self.device.raw().cmd_bind_descriptor_sets(
+                self.raw,
+                vk::PipelineBindPoint::GRAPHICS,
+                raw_pipeline_layout,
+                0,
+                // std::slice::from_ref(&descriptor_set),
+                &[descriptor_set.raw()],
+                &[],
+            );
+        }
+    }
+
     pub fn draw(
         &self,
         vertex_count: u32,
@@ -483,6 +503,7 @@ impl CommandBuffer {
         &self,
         swapchain: &Swapchain,
         graphics_pipeline: &GraphicsPipeline,
+        descriptor_set: &DescriptorSet,
     ) -> Result<()> {
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -533,7 +554,8 @@ impl CommandBuffer {
         self.begin_rendering(rendering_state);
 
         self.bind_graphics_pipeline(graphics_pipeline);
-        self.draw(3, 1, 0, 0);
+        self.bind_descriptor_set(&descriptor_set, graphics_pipeline.raw_layout());
+        self.draw(6, 1, 0, 0);
 
         self.end_rendering();
 

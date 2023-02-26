@@ -10,6 +10,7 @@ pub enum PipelineStage {
     Transfer,
 }
 
+#[derive(Clone, Copy, PartialEq)]
 pub enum ResourceUsageType {
     Immutable,
     Dynamic,
@@ -17,7 +18,7 @@ pub enum ResourceUsageType {
     Staging,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct BlendState {
     pub source_color: vk::BlendFactor,
     pub destination_color: vk::BlendFactor,
@@ -39,7 +40,7 @@ impl BlendState {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct VertexAttribute {
     pub location: u32,
     pub binding: u32,
@@ -47,7 +48,7 @@ pub struct VertexAttribute {
     pub format: vk::Format,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct VertexStream {
     pub binding: u32,
     pub stride: u32,
@@ -77,7 +78,7 @@ impl VertexInputState {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct RasterizationState {
     pub cull_mode: vk::CullModeFlags,
     pub front_face: vk::FrontFace,
@@ -109,7 +110,7 @@ impl RasterizationState {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct DepthStencilState {
     pub depth_test_enable: bool,
     pub depth_write_enable: bool,

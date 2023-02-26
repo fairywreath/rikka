@@ -69,7 +69,7 @@ pub struct Buffer {
     allocator: Arc<Mutex<Allocator>>,
     raw: vk::Buffer,
     allocation: Option<Allocation>,
-    size: vk::DeviceSize,
+    desc: BufferDesc,
     //  XXX: Are these needed?
     // global_offset: u32,
     // usage_flags: vk::BufferUsageFlags,
@@ -121,7 +121,7 @@ impl Buffer {
             allocator,
             raw,
             allocation: Some(allocation),
-            size: desc.size as vk::DeviceSize,
+            desc,
         })
     }
 
@@ -134,6 +134,7 @@ impl Buffer {
                 .mapped_ptr()
                 .unwrap()
                 .as_ptr();
+
             let mut align =
                 ash::util::Align::new(data_ptr, align_of::<T>() as _, size_of_val(data) as _);
             align.copy_from_slice(data);
@@ -149,6 +150,14 @@ impl Buffer {
 
     pub fn raw(&self) -> vk::Buffer {
         self.raw.clone()
+    }
+
+    pub fn size(&self) -> u32 {
+        self.desc.size
+    }
+
+    pub fn resource_usage_type(&self) -> ResourceUsageType {
+        self.desc.resource_usage
     }
 }
 

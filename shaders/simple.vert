@@ -12,7 +12,7 @@ struct VertexData
 //	mat4 mvp;
 //} ubo;
 
-layout(binding = 0) readonly buffer Vertices
+layout(std430, binding = 0) readonly buffer Vertices
 {
 	VertexData data[];
 } inVertices;

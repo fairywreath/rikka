@@ -35,7 +35,7 @@ impl<T> Escape<T> {
         }
     }
 
-    pub fn share(escape: Self) -> Handle<T> {
+    pub fn share(escape: Self) -> EscapeHandle<T> {
         escape.into()
     }
 }
@@ -117,27 +117,27 @@ impl<T> Drop for Terminal<T> {
 }
 
 #[derive(Debug)]
-pub struct Handle<T> {
+pub struct EscapeHandle<T> {
     inner: Arc<Escape<T>>,
 }
 
-impl<T> Clone for Handle<T> {
+impl<T> Clone for EscapeHandle<T> {
     fn clone(&self) -> Self {
-        Handle {
+        Self {
             inner: self.inner.clone(),
         }
     }
 }
 
-impl<T> From<Escape<T>> for Handle<T> {
+impl<T> From<Escape<T>> for EscapeHandle<T> {
     fn from(value: Escape<T>) -> Self {
-        Handle {
+        Self {
             inner: Arc::new(value),
         }
     }
 }
 
-impl<T> Deref for Handle<T> {
+impl<T> Deref for EscapeHandle<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &**self.inner
