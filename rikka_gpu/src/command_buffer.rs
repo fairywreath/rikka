@@ -7,11 +7,14 @@ use anyhow::{anyhow, Result};
 use ash::vk::{self, RenderingAttachmentInfo};
 
 use crate::{
+    barriers::*,
+    buffer::*,
     command_buffer,
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
     descriptor_set::DescriptorSet,
     device::Device,
     frame::{self, FrameThreadPoolsManager},
+    image::*,
     pipeline::*,
     swapchain::Swapchain,
     types::*,
@@ -89,6 +92,7 @@ pub struct CommandBufferManager {
 
     command_buffers: Vec<Arc<CommandBuffer>>,
     secondary_command_buffers: Vec<Arc<CommandBuffer>>,
+    // XXX: For a "safe" implementation, we technically need to make sure the command pools are always valid/not destroyed
 
     // Size equal to number of command pools.
     num_used_command_buffers: Vec<u32>,
@@ -236,8 +240,7 @@ impl CommandBufferManager {
             ));
         }
 
-        // XXX: Handle multiple command buffer usage in one single thread.
-        // self.num_used_command_buffers[pool_index as usize] += 1;
+        self.num_used_command_buffers[pool_index as usize] += 1;
 
         let index = (pool_index * self.num_command_buffers_per_thread) + num_used_buffers;
 
@@ -499,6 +502,71 @@ impl CommandBuffer {
         }
     }
 
+    pub fn copy_buffer(
+        &self,
+        src: &Buffer,
+        dst: &Buffer,
+        size: u64,
+        src_offset: u64,
+        dst_offset: u64,
+    ) {
+        // XXX: Since BufferCopy2 is used - queue all copy regions and only execute copy once?
+        let region = vk::BufferCopy2::builder()
+            .size(size)
+            .src_offset(src_offset)
+            .dst_offset(dst_offset);
+
+        let info = vk::CopyBufferInfo2::builder()
+            .src_buffer(src.raw())
+            .dst_buffer(dst.raw())
+            .regions(std::slice::from_ref(&region));
+
+        unsafe {
+            self.device.raw().cmd_copy_buffer2(self.raw, &info);
+        }
+    }
+
+    pub fn copy_buffer_to_image(&self, buffer: &Buffer, image: &Image, buffer_offset: u64) {
+        // XXX: Since BufferToImageCopy2 is used - queue all copy regions and only execute copy once?
+        let region = vk::BufferImageCopy2::builder()
+            .buffer_offset(buffer_offset)
+            .buffer_row_length(0)
+            .buffer_image_height(0)
+            // XXX: Handle subresource copy properly
+            .image_subresource(
+                vk::ImageSubresourceLayers::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(image.extent());
+
+        let info = vk::CopyBufferToImageInfo2::builder()
+            .src_buffer(buffer.raw())
+            .dst_image(image.raw())
+            .dst_image_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .regions(std::slice::from_ref(&region));
+
+        unsafe {
+            self.device.raw().cmd_copy_buffer_to_image2(self.raw, &info);
+        }
+    }
+
+    pub fn pipeline_barrier(&self, barriers: Barriers) {
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(barriers.image_barriers());
+
+        unsafe {
+            self.device
+                .raw()
+                .cmd_pipeline_barrier2(self.raw, &dependency_info);
+        }
+    }
+
+    /// Simple draw scenario
     pub fn test_record_commands(
         &self,
         swapchain: &Swapchain,

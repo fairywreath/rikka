@@ -22,7 +22,7 @@ pub struct Vertex {
 
 impl RikkaApp {
     pub fn new(gpu_desc: GpuDesc) -> Result<Self> {
-        let mut gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
+        let gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
 
         let vertices = [
             Vertex {
@@ -138,7 +138,10 @@ impl RikkaApp {
 
                 self.gpu
                     .submit_graphics_command_buffer(Arc::downgrade(&command_buffer))?;
-                self.gpu.present()?;
+
+                // XXX: So we don't panic when we need to recreate swapchain...
+                //      Need to wait for all command pools to complete before reset if need to recreate swapchain
+                let _present_result = self.gpu.present();
             }
             Err(_) => {
                 self.gpu

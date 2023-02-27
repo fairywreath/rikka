@@ -15,6 +15,8 @@ use crate::{
     descriptor_set::*,
     device::Device,
     frame::*,
+    image::ImageDesc,
+    image::*,
     instance::Instance,
     physical_device::PhysicalDevice,
     pipeline::*,
@@ -241,6 +243,10 @@ impl Gpu {
         Buffer::new(self.device.clone(), self.allocator.clone(), desc)
     }
 
+    pub fn create_image(&self, desc: ImageDesc) -> Result<Image> {
+        Image::new(self.device.clone(), self.allocator.clone(), desc)
+    }
+
     pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Sampler> {
         Sampler::new(self.device.clone(), desc)
     }
@@ -316,6 +322,11 @@ impl Gpu {
             SwapchainDesc::new(u32::MAX, u32::MAX, 0, 0),
         )
         .with_context(|| format!("recreate_swapchain: Failed to create new swapchain!"))?;
+
+        log::info!(
+            "Swapchain recreated with extent: {:?}",
+            self.swapchain().extent()
+        );
 
         Ok(())
     }

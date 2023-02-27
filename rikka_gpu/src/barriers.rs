@@ -2,6 +2,8 @@ use bitflags::bitflags;
 
 use ash::vk;
 
+use crate::{buffer::Buffer, device::Device, image::Image};
+
 bitflags! {
     pub struct ResourceState : u32
     {
@@ -28,4 +30,25 @@ bitflags! {
     }
 }
 
-pub struct Barrier {}
+pub struct Barriers {
+    image_barriers: Vec<vk::ImageMemoryBarrier2>,
+    // Queue info?
+}
+
+impl Barriers {
+    pub fn new() -> Self {
+        Self {
+            image_barriers: vec![],
+        }
+    }
+
+    pub fn add_image(&mut self, image: &Image, old_state: ResourceState, new_state: ResourceState) {
+        let mut image_barrier = vk::ImageMemoryBarrier2::builder();
+
+        self.image_barriers.push(image_barrier.build());
+    }
+
+    pub fn image_barriers(&self) -> &[vk::ImageMemoryBarrier2] {
+        &self.image_barriers
+    }
+}

@@ -1,7 +1,7 @@
 pub use ash;
 pub use rikka_shader;
 
-mod barrier;
+mod barriers;
 mod buffer;
 mod command_buffer;
 mod constants;

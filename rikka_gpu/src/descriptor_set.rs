@@ -447,7 +447,8 @@ impl DescriptorSet {
                 continue;
             }
 
-            vulkan_write_descriptors.push(self.create_vulkan_write_descriptor_set(
+            vulkan_write_descriptors.push(Self::create_vulkan_write_descriptor_set(
+                self.raw,
                 &binding,
                 &resource,
                 &mut descriptor_buffer_infos,
@@ -465,14 +466,14 @@ impl DescriptorSet {
     }
 
     fn create_vulkan_write_descriptor_set(
-        &self,
+        descriptor_set: vk::DescriptorSet,
         binding: &DescriptorBinding,
         resource: &DescriptorSetBindingResource,
         buffer_descriptors: &mut Vec<vk::DescriptorBufferInfo>,
         image_descriptors: &mut Vec<vk::DescriptorImageInfo>,
     ) -> vk::WriteDescriptorSet {
         let mut write_descriptor = vk::WriteDescriptorSet::builder()
-            .dst_set(self.raw)
+            .dst_set(descriptor_set)
             .dst_binding(resource.binding_index)
             .dst_array_element(0)
             .descriptor_type(binding.descriptor_type);

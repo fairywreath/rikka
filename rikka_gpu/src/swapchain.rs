@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use ash::{extensions::khr, vk};
 
 use crate::{
-    device::Device, instance::Instance, physical_device::PhysicalDevice, queue::Queue,
-    surface::Surface, swapchain, synchronization::Semaphore,
+    device::Device, image::Image, instance::Instance, physical_device::PhysicalDevice,
+    queue::Queue, surface::Surface, swapchain, synchronization::Semaphore,
 };
 
 pub struct Swapchain {
@@ -21,6 +21,7 @@ pub struct Swapchain {
     image_count: u32,
     images: Vec<vk::Image>,
     image_views: Vec<vk::ImageView>,
+    image_handles: Vec<Arc<Image>>,
 
     // Image index obtained from AcquireNextImage.
     vulkan_image_index: u32,
@@ -176,8 +177,9 @@ impl Swapchain {
             image_count,
             vulkan_image_index: 0,
 
-            images: Vec::new(),
-            image_views: Vec::new(),
+            images: Vec::with_capacity(image_count as _),
+            image_views: Vec::with_capacity(image_count as _),
+            image_handles: Vec::with_capacity(image_count as _),
         };
 
         swapchain
@@ -247,7 +249,16 @@ impl Swapchain {
         self.image_views[self.vulkan_image_index as usize]
     }
 
+    pub fn current_image_handle(&self) -> &Arc<Image> {
+        &self.image_handles[self.vulkan_image_index as usize]
+    }
+
+    pub fn device(&self) -> &Arc<Device> {
+        &self.device
+    }
+
     pub fn destroy(&mut self) {
+        // XXX: Handle recreation more gracefully
         if !self.image_views.is_empty() {
             unsafe {
                 for image_view in self.image_views.drain(..) {
@@ -269,7 +280,9 @@ impl Swapchain {
 
         assert_eq!(self.image_count, images.len() as u32);
 
-        let mut image_views = Vec::<vk::ImageView>::with_capacity(images.len());
+        let mut image_views = Vec::with_capacity(images.len());
+        let mut image_handles = Vec::with_capacity(images.len());
+
         for image in &images {
             let image_view_info = vk::ImageViewCreateInfo::builder()
                 .image(image.clone())
@@ -293,17 +306,23 @@ impl Swapchain {
                         .build(),
                 );
 
-            unsafe {
-                image_views.push(
-                    self.device
-                        .raw()
-                        .create_image_view(&image_view_info, None)?,
-                )
+            let image_view = unsafe {
+                self.device
+                    .raw()
+                    .create_image_view(&image_view_info, None)?
             };
+
+            image_views.push(image_view);
+            image_handles.push(Arc::new(Image::from_swapchain(
+                &self,
+                image.clone(),
+                image_view,
+            )));
         }
 
         self.images = images;
         self.image_views = image_views;
+        self.image_handles = image_handles;
 
         Ok(())
     }
