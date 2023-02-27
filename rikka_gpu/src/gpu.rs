@@ -355,13 +355,22 @@ impl Gpu {
         Ok(command_buffer)
     }
 
-    // XXX: Remove these.
+    // XXX: Remove this
     pub fn swapchain(&self) -> &Swapchain {
         &self.swapchain
     }
 
     pub fn advance_frame_counters(&mut self) {
         self.frame_synchronization_manager.advance_frame_counters();
+    }
+
+    pub fn wait_idle(&self) {
+        unsafe {
+            self.device
+                .raw()
+                .queue_wait_idle(self.graphics_queue.raw())
+                .unwrap();
+        };
     }
 }
 

@@ -543,7 +543,7 @@ impl CommandBuffer {
 
         let color_attachment = RenderColorAttachment::new()
             .set_clear_value(vk::ClearColorValue {
-                float32: [1.0, 0.0, 0.0, 1.0],
+                float32: [1.0, 1.0, 1.0, 1.0],
             })
             .set_operation(RenderPassOperation::Clear)
             .set_image_view(swapchain.current_image_view())
