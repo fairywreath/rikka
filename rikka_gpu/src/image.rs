@@ -298,7 +298,10 @@ impl Image {
         format_has_depth(self.format)
     }
 
-    // Image view/subresource info
+    pub fn subresource_range(&self) -> vk::ImageSubresourceRange {
+        self.subresource_range
+    }
+
     pub fn base_mip_level(&self) -> u32 {
         self.subresource_range.base_mip_level
     }

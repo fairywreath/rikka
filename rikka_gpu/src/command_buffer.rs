@@ -581,33 +581,41 @@ impl CommandBuffer {
                 .begin_command_buffer(self.raw, &begin_info)?
         };
 
-        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .image(swapchain.current_image())
-            .subresource_range(
-                vk::ImageSubresourceRange::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .build();
+        let mut barriers = Barriers::new();
+        barriers.add_image(
+            swapchain.current_image_handle().as_ref(),
+            ResourceState::UNDEFINED,
+            ResourceState::RENDER_TARGET,
+        );
+        self.pipeline_barrier(barriers);
 
-        unsafe {
-            self.device.raw().cmd_pipeline_barrier(
-                self.raw,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[image_memory_barrier],
-            );
-        }
+        // let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+        //     .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        //     .old_layout(vk::ImageLayout::UNDEFINED)
+        //     .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        //     .image(swapchain.current_image())
+        //     .subresource_range(
+        //         vk::ImageSubresourceRange::builder()
+        //             .aspect_mask(vk::ImageAspectFlags::COLOR)
+        //             .base_mip_level(0)
+        //             .level_count(1)
+        //             .base_array_layer(0)
+        //             .layer_count(1)
+        //             .build(),
+        //     )
+        //     .build();
+
+        // unsafe {
+        //     self.device.raw().cmd_pipeline_barrier(
+        //         self.raw,
+        //         vk::PipelineStageFlags::TOP_OF_PIPE,
+        //         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        //         vk::DependencyFlags::empty(),
+        //         &[],
+        //         &[],
+        //         &[image_memory_barrier],
+        //     );
+        // }
 
         let color_attachment = RenderColorAttachment::new()
             .set_clear_value(vk::ClearColorValue {
@@ -627,33 +635,41 @@ impl CommandBuffer {
 
         self.end_rendering();
 
-        let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .image(swapchain.current_image())
-            .subresource_range(
-                vk::ImageSubresourceRange::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .build();
+        let mut barriers = Barriers::new();
+        barriers.add_image(
+            swapchain.current_image_handle().as_ref(),
+            ResourceState::RENDER_TARGET,
+            ResourceState::PRESENT,
+        );
+        self.pipeline_barrier(barriers);
 
-        unsafe {
-            self.device.raw().cmd_pipeline_barrier(
-                self.raw,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[image_memory_barrier],
-            );
-        }
+        // let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+        //     .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        //     .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        //     .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        //     .image(swapchain.current_image())
+        //     .subresource_range(
+        //         vk::ImageSubresourceRange::builder()
+        //             .aspect_mask(vk::ImageAspectFlags::COLOR)
+        //             .base_mip_level(0)
+        //             .level_count(1)
+        //             .base_array_layer(0)
+        //             .layer_count(1)
+        //             .build(),
+        //     )
+        //     .build();
+
+        // unsafe {
+        //     self.device.raw().cmd_pipeline_barrier(
+        //         self.raw,
+        //         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        //         vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+        //         vk::DependencyFlags::empty(),
+        //         &[],
+        //         &[],
+        //         &[image_memory_barrier],
+        //     );
+        // }
 
         unsafe { self.device.raw().end_command_buffer(self.raw)? };
 

@@ -9,6 +9,7 @@ use gpu_allocator::{
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{
+    barriers::*,
     buffer::*,
     command_buffer::*,
     constants,
@@ -382,6 +383,23 @@ impl Gpu {
                 .queue_wait_idle(self.graphics_queue.raw())
                 .unwrap();
         };
+    }
+
+    // XXX: Remove these, ideally handled somewhere else
+    pub fn set_swapchain_as_render_target(&mut self) -> Result<()> {
+        // let mut command_buffer = self.current_command_buffer(0)?.upgrade().unwrap();
+
+        // command_buffer.begin();
+
+        // let mut barriers = Barriers::new();
+        // barriers.add_image(
+        //     self.swapchain.current_image_handle().as_ref(),
+        //     ResourceState::RENDER_TARGET,
+        //     ResourceState::PRESENT,
+        // );
+        // command_buffer.pipeline_barrier(barriers);
+
+        Ok(())
     }
 }
 

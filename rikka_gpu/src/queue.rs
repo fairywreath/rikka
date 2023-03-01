@@ -72,6 +72,14 @@ pub struct SemaphoreSubmitInfo<'a> {
     // For timeline semaphores.
     pub value: Option<u64>,
 }
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum QueueType {
+    Graphics,
+    Compute,
+    Transfer,
+}
+
 pub struct Queue {
     device: Arc<Device>,
     raw: vk::Queue,
