@@ -25,7 +25,9 @@ mod types;
 
 pub use buffer::*;
 pub use gpu::*;
+pub use image::*;
 pub use pipeline::*;
+pub use sampler::*;
 pub use shader_state::*;
 pub use types::*;
 

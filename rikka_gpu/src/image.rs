@@ -318,6 +318,15 @@ impl Image {
 impl Drop for Image {
     fn drop(&mut self) {
         if self.owning {
+            // XXX: tf is this
+            self.allocator
+                .clone()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .free(self.allocation.take().unwrap())
+                .unwrap();
+
             unsafe {
                 self.device.raw().destroy_image(self.raw, None);
                 self.device.raw().destroy_image_view(self.raw_view, None);

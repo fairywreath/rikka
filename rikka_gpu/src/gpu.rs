@@ -289,15 +289,9 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn submit_graphics_command_buffer(
-        &self,
-        command_buffer: Weak<CommandBuffer>,
-    ) -> Result<()> {
-        let command_buffer = command_buffer.upgrade().unwrap();
-        let command_buffers = vec![command_buffer.as_ref()];
-
+    pub fn submit_graphics_command_buffer(&self, command_buffer: &CommandBuffer) -> Result<()> {
         self.frame_synchronization_manager
-            .submit_graphics_command_buffers(&command_buffers, &self.graphics_queue)?;
+            .submit_graphics_command_buffers(&[command_buffer], &self.graphics_queue)?;
 
         Ok(())
     }
@@ -358,7 +352,7 @@ impl Gpu {
         self.frame_synchronization_manager.current_frame_index()
     }
 
-    pub fn current_command_buffer(&mut self, thread_index: u32) -> Result<Weak<CommandBuffer>> {
+    pub fn current_command_buffer(&mut self, thread_index: u32) -> Result<Arc<CommandBuffer>> {
         let command_buffer = self.command_buffer_manager.command_buffer(
             self.frame_synchronization_manager.current_frame_index() as u32,
             thread_index,
@@ -398,6 +392,23 @@ impl Gpu {
         //     ResourceState::PRESENT,
         // );
         // command_buffer.pipeline_barrier(barriers);
+
+        Ok(())
+    }
+
+    pub fn copy_data_to_image<T: Copy>(
+        // For command buffer manager mut access
+        &mut self,
+        image: &Image,
+        staging_buffer: &Buffer,
+        data: &[T],
+    ) -> Result<()> {
+        let command_buffer = self.current_command_buffer(0)?;
+        command_buffer.upload_data_to_image(image, staging_buffer, data)?;
+        self.graphics_queue
+            .submit(&[command_buffer.as_ref()], vec![], vec![])?;
+
+        self.wait_idle();
 
         Ok(())
     }

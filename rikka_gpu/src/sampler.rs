@@ -32,7 +32,15 @@ pub struct SamplerDesc {
 
 impl SamplerDesc {
     pub fn new() -> Self {
-        todo!()
+        Self {
+            min_flter: vk::Filter::LINEAR,
+            mag_filter: vk::Filter::LINEAR,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            reduction_mode: vk::SamplerReductionMode::WEIGHTED_AVERAGE,
+        }
     }
 }
 

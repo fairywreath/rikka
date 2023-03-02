@@ -98,6 +98,7 @@ impl Queue {
     pub fn submit(
         &self,
         command_buffers: &[&CommandBuffer],
+        // XXX: Change these to array slices
         wait_semaphores: Vec<SemaphoreSubmitInfo>,
         signal_semaphores: Vec<SemaphoreSubmitInfo>,
     ) -> Result<()> {

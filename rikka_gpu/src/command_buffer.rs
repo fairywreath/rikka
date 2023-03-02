@@ -212,11 +212,7 @@ impl CommandBufferManager {
     ) -> Result<()> {
         for thread_index in 0..self.num_threads_per_frame {
             let command_pool = pools_manager.command_pool_at(frame_index, thread_index);
-            unsafe {
-                self.device
-                    .raw()
-                    .reset_command_pool(command_pool.raw(), vk::CommandPoolResetFlags::empty())?;
-            }
+            command_pool.reset();
 
             let pool_index = self.pool_index_from_indices(frame_index, thread_index) as usize;
             self.num_used_command_buffers[pool_index] = 0;
@@ -230,7 +226,7 @@ impl CommandBufferManager {
         &mut self,
         frame_index: u32,
         thread_index: u32,
-    ) -> Result<Weak<CommandBuffer>> {
+    ) -> Result<Arc<CommandBuffer>> {
         let pool_index = self.pool_index_from_indices(frame_index, thread_index);
         let num_used_buffers = self.num_used_command_buffers[pool_index as usize];
 
@@ -244,15 +240,14 @@ impl CommandBufferManager {
 
         let index = (pool_index * self.num_command_buffers_per_thread) + num_used_buffers;
 
-        let command_buffer = Arc::downgrade(&self.command_buffers[index as usize]);
-        Ok(command_buffer)
+        Ok(self.command_buffers[index as usize].clone())
     }
 
     pub fn secondary_command_buffer(
         &mut self,
         frame_index: u32,
         thread_index: u32,
-    ) -> Result<Weak<CommandBuffer>> {
+    ) -> Result<Arc<CommandBuffer>> {
         let pool_index = self.pool_index_from_indices(frame_index, thread_index);
         let num_used_buffers = self.num_used_secondary_command_buffers[pool_index as usize];
 
@@ -266,9 +261,7 @@ impl CommandBufferManager {
         let index =
             (pool_index * constants::NUM_SECONDARY_COMMAND_BUFFERS_PER_THREAD) * num_used_buffers;
 
-        let command_buffer = Arc::downgrade(&self.secondary_command_buffers[index as usize]);
-
-        Ok(command_buffer)
+        Ok(self.secondary_command_buffers[index as usize].clone())
     }
 
     fn pool_index_from_indices(&self, frame_index: u32, thread_index: u32) -> u32 {
@@ -555,6 +548,46 @@ impl CommandBuffer {
         }
     }
 
+    pub fn upload_data_to_image<T: Copy>(
+        &self,
+        image: &Image,
+        staging_buffer: &Buffer,
+        data: &[T],
+    ) -> Result<()> {
+        // XXX: Remove this!
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.device
+                .raw()
+                .begin_command_buffer(self.raw, &begin_info)?
+        };
+
+        staging_buffer.copy_data_to_buffer(data)?;
+
+        let mut barriers = Barriers::new();
+        barriers.add_image(
+            image,
+            ResourceState::UNDEFINED,
+            ResourceState::COPY_DESTINATION,
+        );
+        self.pipeline_barrier(barriers);
+
+        self.copy_buffer_to_image(staging_buffer, image, 0);
+
+        let mut barriers = Barriers::new();
+        barriers.add_image(
+            image,
+            ResourceState::COPY_DESTINATION,
+            ResourceState::SHADER_RESOURCE,
+        );
+        self.pipeline_barrier(barriers);
+
+        unsafe { self.device.raw().end_command_buffer(self.raw)? };
+
+        Ok(())
+    }
+
     pub fn pipeline_barrier(&self, barriers: Barriers) {
         let dependency_info =
             vk::DependencyInfo::builder().image_memory_barriers(barriers.image_barriers());
@@ -589,34 +622,6 @@ impl CommandBuffer {
         );
         self.pipeline_barrier(barriers);
 
-        // let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-        //     .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-        //     .old_layout(vk::ImageLayout::UNDEFINED)
-        //     .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        //     .image(swapchain.current_image())
-        //     .subresource_range(
-        //         vk::ImageSubresourceRange::builder()
-        //             .aspect_mask(vk::ImageAspectFlags::COLOR)
-        //             .base_mip_level(0)
-        //             .level_count(1)
-        //             .base_array_layer(0)
-        //             .layer_count(1)
-        //             .build(),
-        //     )
-        //     .build();
-
-        // unsafe {
-        //     self.device.raw().cmd_pipeline_barrier(
-        //         self.raw,
-        //         vk::PipelineStageFlags::TOP_OF_PIPE,
-        //         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        //         vk::DependencyFlags::empty(),
-        //         &[],
-        //         &[],
-        //         &[image_memory_barrier],
-        //     );
-        // }
-
         let color_attachment = RenderColorAttachment::new()
             .set_clear_value(vk::ClearColorValue {
                 float32: [1.0, 1.0, 1.0, 1.0],
@@ -642,34 +647,6 @@ impl CommandBuffer {
             ResourceState::PRESENT,
         );
         self.pipeline_barrier(barriers);
-
-        // let image_memory_barrier = vk::ImageMemoryBarrier::builder()
-        //     .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-        //     .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        //     .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-        //     .image(swapchain.current_image())
-        //     .subresource_range(
-        //         vk::ImageSubresourceRange::builder()
-        //             .aspect_mask(vk::ImageAspectFlags::COLOR)
-        //             .base_mip_level(0)
-        //             .level_count(1)
-        //             .base_array_layer(0)
-        //             .layer_count(1)
-        //             .build(),
-        //     )
-        //     .build();
-
-        // unsafe {
-        //     self.device.raw().cmd_pipeline_barrier(
-        //         self.raw,
-        //         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        //         vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-        //         vk::DependencyFlags::empty(),
-        //         &[],
-        //         &[],
-        //         &[image_memory_barrier],
-        //     );
-        // }
 
         unsafe { self.device.raw().end_command_buffer(self.raw)? };
 

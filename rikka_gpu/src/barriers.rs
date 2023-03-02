@@ -107,7 +107,7 @@ impl From<ResourceState> for vk::ImageLayout {
             return vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         }
         if resource_state.contains(ResourceState::SHADER_RESOURCE) {
-            return vk::ImageLayout::READ_ONLY_OPTIMAL;
+            return vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         }
         if resource_state.contains(ResourceState::COPY_SOURCE) {
             return vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
@@ -151,11 +151,10 @@ fn determine_pipeline_flags_from_access_flags(
             {
                 flags |= vk::PipelineStageFlags2::VERTEX_ATTRIBUTE_INPUT;
             }
-            if access_flags.contains(
-                vk::AccessFlags2::UNIFORM_READ
-                    | vk::AccessFlags2::SHADER_READ
-                    | vk::AccessFlags2::SHADER_WRITE,
-            ) {
+            if access_flags.contains(vk::AccessFlags2::UNIFORM_READ)
+                || access_flags.contains(vk::AccessFlags2::SHADER_READ)
+                || access_flags.contains(vk::AccessFlags2::SHADER_WRITE)
+            {
                 flags |= vk::PipelineStageFlags2::VERTEX_SHADER
                     | vk::PipelineStageFlags2::FRAGMENT_SHADER;
 
@@ -182,6 +181,13 @@ fn determine_pipeline_flags_from_access_flags(
             ) {
                 flags |= vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS
                     | vk::PipelineStageFlags2::LATE_FRAGMENT_TESTS;
+            }
+
+            // XXX: Only use transfer queue for these
+            if access_flags.contains(vk::AccessFlags2::TRANSFER_READ)
+                || access_flags.contains(vk::AccessFlags2::TRANSFER_WRITE)
+            {
+                flags |= vk::PipelineStageFlags2::TRANSFER;
             }
         }
         QueueType::Compute => {
