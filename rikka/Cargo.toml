@@ -11,8 +11,8 @@ env_logger = "0.10.0"
 log = "0.4.17"
 winit = "0.27.5"
 anyhow = "1.0.68"
-nalgebra = "0.32.1"
 image = "0.24.5"
 gltf = "1.1.0"
+nalgebra = "0.32.1"
 
 

@@ -221,6 +221,7 @@ impl Barriers {
         }
     }
 
+    // XXX: Make this accept self and return self
     pub fn add_image(&mut self, image: &Image, old_state: ResourceState, new_state: ResourceState) {
         self.add_image_from_vulkan_parameters(
             old_state.into(),

@@ -1,11 +1,15 @@
 use std::sync::{Arc, Weak};
 
 use anyhow::{Context, Error, Result};
+use nalgebra::Matrix4;
 
 use rikka_gpu::{self, ash::vk, *};
 
+use crate::renderer::{camera::*, *};
+
 pub struct RikkaApp {
     storage_buffer: Arc<Buffer>,
+    uniform_buffer: Arc<Buffer>,
     descriptor_set_layout: Arc<DescriptorSetLayout>,
     descriptor_set: DescriptorSet,
     graphics_pipeline: GraphicsPipeline,
@@ -14,47 +18,24 @@ pub struct RikkaApp {
     texture_data: image::DynamicImage,
     texture_sampler: Arc<Sampler>,
 
+    uniform_data: UniformData,
+
     // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
     gpu: Gpu,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct Vertex {
-    pub positions: [f32; 3],
-    pub tex_coords: [f32; 2],
+struct UniformData {
+    view: Matrix4<f32>,
+    projection: Matrix4<f32>,
 }
 
 impl RikkaApp {
     pub fn new(gpu_desc: GpuDesc) -> Result<Self> {
         let gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
 
-        let vertices = [
-            Vertex {
-                positions: [1.0, 1.0, 0.0],
-                tex_coords: [1.0, 1.0],
-            },
-            Vertex {
-                positions: [-1.0, 1.0, 0.0],
-                tex_coords: [0.0, 1.0],
-            },
-            Vertex {
-                positions: [1.0, -1.0, 0.0],
-                tex_coords: [1.0, 0.0],
-            },
-            Vertex {
-                positions: [-1.0, -1.0, 0.0],
-                tex_coords: [0.0, 0.0],
-            },
-            Vertex {
-                positions: [-1.0, 1.0, 0.0],
-                tex_coords: [0.0, 1.0],
-            },
-            Vertex {
-                positions: [1.0, -1.0, 0.0],
-                tex_coords: [1.0, 0.0],
-            },
-        ];
+        let vertices = cube_vertices();
 
         let buffer_size = std::mem::size_of_val(&vertices);
 
@@ -65,8 +46,19 @@ impl RikkaApp {
                 .set_device_only(false),
         )?;
         storage_buffer.copy_data_to_buffer(&vertices)?;
-
         let storage_buffer = Arc::new(storage_buffer);
+
+        let uniform_data = UniformData {
+            view: Matrix4::identity(),
+            projection: Matrix4::identity(),
+        };
+        let uniform_buffer = gpu.create_buffer(
+            BufferDesc::new()
+                .set_size(std::mem::size_of::<UniformData>() as _)
+                .set_usage_flags(ash::vk::BufferUsageFlags::UNIFORM_BUFFER)
+                .set_device_only(false),
+        )?;
+        let uniform_buffer = Arc::new(uniform_buffer);
 
         let texture_data =
             image::open("assets/ononoki.jpg").context("Failed to open image file")?;
@@ -100,6 +92,12 @@ impl RikkaApp {
                         1,
                         1,
                         vk::ShaderStageFlags::FRAGMENT,
+                    ))
+                    .add_binding(DescriptorBinding::new(
+                        vk::DescriptorType::UNIFORM_BUFFER,
+                        2,
+                        1,
+                        vk::ShaderStageFlags::VERTEX,
                     )),
             )
             .unwrap();
@@ -108,6 +106,7 @@ impl RikkaApp {
         let binding_resources = vec![
             DescriptorSetBindingResource::buffer(storage_buffer.clone(), 0),
             DescriptorSetBindingResource::image(texture_image.clone(), 1),
+            DescriptorSetBindingResource::buffer(uniform_buffer.clone(), 2),
         ];
 
         let descriptor_set = gpu.create_descriptor_set(
@@ -153,11 +152,18 @@ impl RikkaApp {
             descriptor_set_layout,
             descriptor_set,
             graphics_pipeline,
+
+            uniform_buffer,
+            uniform_data,
         })
     }
 
     pub fn render(&mut self) -> Result<()> {
         self.gpu.new_frame().unwrap();
+
+        // Update camera uniforms
+        self.uniform_buffer
+            .copy_data_to_buffer(std::slice::from_ref(&self.uniform_data))?;
 
         let acquire_result = self.gpu.swapchain_acquire_next_image();
 
@@ -230,6 +236,14 @@ impl RikkaApp {
         )?;
 
         Ok(())
+    }
+
+    pub fn update_view(&mut self, view: &Matrix4<f32>) {
+        self.uniform_data.view = view.clone();
+    }
+
+    pub fn update_projection(&mut self, projection: &Matrix4<f32>) {
+        self.uniform_data.projection = projection.clone();
     }
 }
 

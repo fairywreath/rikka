@@ -636,7 +636,7 @@ impl CommandBuffer {
 
         self.bind_graphics_pipeline(graphics_pipeline);
         self.bind_descriptor_set(&descriptor_set, graphics_pipeline.raw_layout());
-        self.draw(6, 1, 0, 0);
+        self.draw(36, 1, 0, 0);
 
         self.end_rendering();
 
