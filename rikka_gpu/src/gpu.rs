@@ -30,6 +30,9 @@ use crate::{
 };
 
 pub struct Gpu {
+    // XXX: Have an asynchronous transfer handler
+    transfer_command_pool: CommandPool,
+
     // XXX: Use escape/terminals for this?
     global_descriptor_pool: Arc<DescriptorPool>,
     bindless_descriptor_pool: Arc<DescriptorPool>,
@@ -215,6 +218,10 @@ impl Gpu {
                 ),
         )?;
 
+        // XXX: Actually use transfer command queue for this, currently use graphics since need different queues for resource state transitions
+        let transfer_command_pool =
+            CommandPool::new(device.clone(), graphics_queue.family_index())?;
+
         Ok(Self {
             surface,
             instance,
@@ -237,6 +244,8 @@ impl Gpu {
 
             global_descriptor_pool: Arc::new(global_descriptor_pool),
             bindless_descriptor_pool: Arc::new(bindless_descriptor_pool),
+
+            transfer_command_pool,
         })
     }
 
@@ -403,10 +412,24 @@ impl Gpu {
         staging_buffer: &Buffer,
         data: &[T],
     ) -> Result<()> {
-        let command_buffer = self.current_command_buffer(0)?;
+        let command_buffer = self
+            .transfer_command_pool
+            .allocate_command_buffer(vk::CommandBufferLevel::PRIMARY)?;
+        let command_buffer = CommandBuffer::new(
+            self.device.clone(),
+            command_buffer,
+            // XXX: Implement trait default for this
+            CommandBufferMetaData {
+                array_index: 0,
+                frame_index: 0,
+                thread_index: 0,
+            },
+            false,
+        );
+
         command_buffer.upload_data_to_image(image, staging_buffer, data)?;
         self.graphics_queue
-            .submit(&[command_buffer.as_ref()], vec![], vec![])?;
+            .submit(&[&command_buffer], vec![], vec![])?;
 
         self.wait_idle();
 

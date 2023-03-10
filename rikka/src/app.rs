@@ -3,9 +3,12 @@ use std::sync::{Arc, Weak};
 use anyhow::{Context, Error, Result};
 use nalgebra::Matrix4;
 
-use rikka_gpu::{self, ash::vk, *};
+use rikka_gpu::{
+    self, ash::vk, buffer::*, descriptor_set::*, gpu::*, image::*, pipeline::*, sampler::*,
+    shader_state::*, types::*,
+};
 
-use crate::renderer::{camera::*, *};
+use crate::renderer::{camera::*, gltf::*, *};
 
 pub struct RikkaApp {
     storage_buffer: Arc<Buffer>,
@@ -15,7 +18,7 @@ pub struct RikkaApp {
     graphics_pipeline: GraphicsPipeline,
 
     texture_image: Arc<Image>,
-    texture_data: image::DynamicImage,
+    // texture_data: image::DynamicImage,
     texture_sampler: Arc<Sampler>,
 
     uniform_data: UniformData,
@@ -42,7 +45,7 @@ impl RikkaApp {
         let storage_buffer = gpu.create_buffer(
             BufferDesc::new()
                 .set_size(buffer_size as u32)
-                .set_usage_flags(ash::vk::BufferUsageFlags::STORAGE_BUFFER)
+                .set_usage_flags(vk::BufferUsageFlags::STORAGE_BUFFER)
                 .set_device_only(false),
         )?;
         storage_buffer.copy_data_to_buffer(&vertices)?;
@@ -55,23 +58,24 @@ impl RikkaApp {
         let uniform_buffer = gpu.create_buffer(
             BufferDesc::new()
                 .set_size(std::mem::size_of::<UniformData>() as _)
-                .set_usage_flags(ash::vk::BufferUsageFlags::UNIFORM_BUFFER)
+                .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER)
                 .set_device_only(false),
         )?;
         let uniform_buffer = Arc::new(uniform_buffer);
 
-        let texture_data =
-            image::open("assets/ononoki.jpg").context("Failed to open image file")?;
-        log::info!(
-            "Loaded image info -  color: {:?}, dimensions: {} x {}",
-            texture_data.color(),
-            texture_data.width(),
-            texture_data.height()
-        );
-
         let texture_sampler = Arc::new(gpu.create_sampler(SamplerDesc::new())?);
 
-        let image_desc = ImageDesc::new(texture_data.width(), texture_data.height(), 1)
+        // let texture_data =
+        //     image::open("assets/ononoki.jpg").context("Failed to open image file")?;
+        // log::info!(
+        //     "Loaded image info -  color: {:?}, dimensions: {} x {}",
+        //     texture_data.color(),
+        //     texture_data.width(),
+        //     texture_data.height()
+        // );
+
+        // let image_desc = ImageDesc::new(texture_data.width(), texture_data.height(), 1)
+        let image_desc = ImageDesc::new(1, 1, 1)
             .set_format(vk::Format::R8G8B8A8_UNORM)
             .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
         let mut texture_image = gpu.create_image(image_desc)?;
@@ -137,14 +141,15 @@ impl RikkaApp {
                     .set_rendering_state(RenderingState::new_dimensionless().add_color_attachment(
                         RenderColorAttachment::new().set_format(gpu.swapchain().format()),
                     ))
-                    .set_descriptor_set_layouts(vec![descriptor_set_layout.raw()]),
+                    .set_descriptor_set_layouts(vec![descriptor_set_layout.raw()]), // .set_rasterization_state(
+                                                                                    // RasterizationState::new().set_polygon_mode(vk::PolygonMode::LINE),
+                                                                                    // ),
             )?
         };
 
         Ok(Self {
             gpu,
 
-            texture_data,
             texture_image,
             texture_sampler,
 
@@ -212,28 +217,31 @@ impl RikkaApp {
     }
 
     pub fn prepare(&mut self) -> Result<()> {
-        let texture_rgba8 = self.texture_data.clone().into_rgba8();
-        let texture_data_bytes = texture_rgba8.as_raw();
-        let texture_data_size = std::mem::size_of_val(texture_data_bytes.as_slice());
+        // let texture_rgba8 = self.texture_data.clone().into_rgba8();
+        // let texture_data_bytes = texture_rgba8.as_raw();
+        // let texture_data_size = std::mem::size_of_val(texture_data_bytes.as_slice());
 
-        log::info!(
-            "Texture data size: {:?}, dimensions: {:?}",
-            texture_data_size,
-            texture_rgba8.dimensions(),
-        );
+        // log::info!(
+        //     "Texture data size: {:?}, dimensions: {:?}",
+        //     texture_data_size,
+        //     texture_rgba8.dimensions(),
+        // );
 
-        let staging_buffer = self.gpu.create_buffer(
-            BufferDesc::new()
-                .set_device_only(false)
-                .set_size(texture_data_size as _)
-                .set_resource_usage(ResourceUsageType::Staging),
-        )?;
+        // let staging_buffer = self.gpu.create_buffer(
+        //     BufferDesc::new()
+        //         .set_device_only(false)
+        //         .set_size(texture_data_size as _)
+        //         .set_resource_usage(ResourceUsageType::Staging),
+        // )?;
 
-        self.gpu.copy_data_to_image(
-            self.texture_image.as_ref(),
-            &staging_buffer,
-            texture_data_bytes,
-        )?;
+        // self.gpu.copy_data_to_image(
+        //     self.texture_image.as_ref(),
+        //     &staging_buffer,
+        //     texture_data_bytes,
+        // )?;
+
+        let gltf_scene =
+            GltfScene::from_file(&mut self.gpu, "assets/SunTemple-glTF/suntemple.gltf").unwrap();
 
         Ok(())
     }

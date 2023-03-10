@@ -10,7 +10,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use rikka_gpu::GpuDesc;
+use rikka_gpu::gpu::GpuDesc;
 
 use crate::renderer::camera::*;
 
@@ -52,6 +52,7 @@ fn main() {
         0.1,
         100.0,
     );
+
     let mut camera_controller = FirstPersonCameraController::new(4.0, 0.4);
 
     rikka_app.update_view(camera_view.matrix());
@@ -103,7 +104,7 @@ fn main() {
         } => {
             camera_controller.process_mouse_motion(delta.0, delta.1);
         }
-        // XXX: Handle window resize events
+        // XXX:
         Event::MainEventsCleared => {
             let now = Instant::now();
             let dt = now - last_render_time;

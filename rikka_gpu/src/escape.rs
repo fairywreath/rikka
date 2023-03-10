@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use ::crossbeam_channel::{Receiver, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 
 #[derive(Debug)]
 pub struct Escape<T> {

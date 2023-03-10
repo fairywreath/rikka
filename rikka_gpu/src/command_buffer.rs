@@ -349,7 +349,7 @@ impl CommandBuffer {
             rendering_state.color_attachments.len(),
         );
 
-        for attachment in rendering_state.color_attachments {
+        for attachment in &rendering_state.color_attachments {
             let rendering_attachment = vk::RenderingAttachmentInfo::builder()
                 .image_view(attachment.image_view)
                 .image_layout(attachment.image_layout)
@@ -575,6 +575,8 @@ impl CommandBuffer {
 
         self.copy_buffer_to_image(staging_buffer, image, 0);
 
+        // XXX: Cannot transition to SHADER_RESROUCE state if transfer queue is used.
+        //      Need to use another different command buffer in this case...
         let mut barriers = Barriers::new();
         barriers.add_image(
             image,

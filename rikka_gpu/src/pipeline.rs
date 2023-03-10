@@ -79,6 +79,11 @@ impl GraphicsPipelineDesc {
         self.descriptor_set_layouts = descriptor_set_layouts;
         self
     }
+
+    pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
+        self.rasterization_state = rasterization_state;
+        self
+    }
 }
 
 pub struct GraphicsPipeline {
@@ -178,6 +183,8 @@ impl GraphicsPipeline {
                 height: desc.height,
             })
             .build()];
+
+        // XXX: Add dynamic viewport(to handle window resizing)
         let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
             .viewports(&viewports)
             .scissors(&scissors);

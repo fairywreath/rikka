@@ -202,7 +202,11 @@ fn determine_pipeline_flags_from_access_flags(
             todo!()
         }
         QueueType::Transfer => {
-            todo!()
+            if access_flags.contains(vk::AccessFlags2::TRANSFER_READ)
+                || access_flags.contains(vk::AccessFlags2::TRANSFER_WRITE)
+            {
+                flags |= vk::PipelineStageFlags2::TRANSFER;
+            }
         }
     }
 

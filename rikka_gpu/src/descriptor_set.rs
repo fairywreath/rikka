@@ -2,9 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Error, Result};
 use ash::vk::{self, Handle};
-use gpu_allocator::vulkan;
 
-use crate::{buffer::Buffer, constants, device::Device, image::Image, ResourceUsageType};
+use crate::{buffer::Buffer, constants, device::Device, image::Image, types::ResourceUsageType};
 
 pub struct DescriptorPoolDesc {
     pub pool_sizes: Vec<vk::DescriptorPoolSize>,

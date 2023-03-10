@@ -1,4 +1,6 @@
 pub mod camera;
+pub mod gltf;
+pub mod renderer;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
