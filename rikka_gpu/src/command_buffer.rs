@@ -288,7 +288,7 @@ pub struct CommandBuffer {
     device: Arc<Device>,
     raw: vk::CommandBuffer,
 
-    pub(crate) is_recording: bool,
+    // pub(crate) is_recording: bool,
     pub(crate) is_secondary: bool,
     meta_data: CommandBufferMetaData,
     // Reference to pipeline?
@@ -306,7 +306,7 @@ impl CommandBuffer {
         Self {
             device: device.clone(),
             raw: command_buffer,
-            is_recording: false,
+            // is_recording: false,
             is_secondary,
             meta_data,
         }
@@ -316,30 +316,30 @@ impl CommandBuffer {
         self.raw
     }
 
-    pub fn begin(&mut self) -> Result<()> {
-        if !self.is_recording {
-            let begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            unsafe {
-                self.device
-                    .raw()
-                    .begin_command_buffer(self.raw, &begin_info)?
-            };
-            self.is_recording = true;
-        } else {
-            log::warn!("Called begin to command buffer that is already recording!");
-        }
+    pub fn begin(&self) -> Result<()> {
+        // if !self.is_recording {
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.device
+                .raw()
+                .begin_command_buffer(self.raw, &begin_info)?
+        };
+        // self.is_recording = true;
+        // } else {
+        // log::warn!("Called begin to command buffer that is already recording!");
+        // }
 
         Ok(())
     }
 
-    pub fn end(&mut self) -> Result<()> {
-        if self.is_recording {
-            unsafe { self.device.raw().end_command_buffer(self.raw)? };
-            self.is_recording = false;
-        } else {
-            log::warn!("Called end to command buffer that is not recording!");
-        }
+    pub fn end(&self) -> Result<()> {
+        // if self.is_recording {
+        unsafe { self.device.raw().end_command_buffer(self.raw)? };
+        // self.is_recording = false;
+        // } else {
+        // log::warn!("Called end to command buffer that is not recording!");
+        // }
 
         Ok(())
     }
@@ -368,8 +368,7 @@ impl CommandBuffer {
         }
 
         let depth_attachment_info = {
-            if rendering_state.depth_attachment.is_some() {
-                let attachment = rendering_state.depth_attachment.unwrap();
+            if let Some(attachment) = rendering_state.depth_attachment {
                 vk::RenderingAttachmentInfo::builder()
                     .image_view(attachment.image_view)
                     .image_layout(attachment.image_layout)
@@ -417,6 +416,31 @@ impl CommandBuffer {
     pub fn end_rendering(&self) {
         unsafe {
             self.device.raw().cmd_end_rendering(self.raw);
+        }
+    }
+
+    pub fn bind_vertex_buffer(&self, buffer: &Buffer, binding: u32, offset: u64) {
+        // XXX: Map multiple vertex bufffers at once
+        unsafe {
+            self.device.raw().cmd_bind_vertex_buffers2(
+                self.raw,
+                binding,
+                &[buffer.raw()],
+                &[offset],
+                None,
+                None,
+            )
+        }
+    }
+
+    pub fn bind_index_buffer(&self, buffer: &Buffer, offset: u64) {
+        unsafe {
+            self.device.raw().cmd_bind_index_buffer(
+                self.raw,
+                buffer.raw(),
+                offset,
+                vk::IndexType::UINT16,
+            );
         }
     }
 
@@ -599,59 +623,5 @@ impl CommandBuffer {
                 .raw()
                 .cmd_pipeline_barrier2(self.raw, &dependency_info);
         }
-    }
-
-    /// Simple draw scenario
-    pub fn test_record_commands(
-        &self,
-        swapchain: &Swapchain,
-        graphics_pipeline: &GraphicsPipeline,
-        descriptor_set: &DescriptorSet,
-    ) -> Result<()> {
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe {
-            self.device
-                .raw()
-                .begin_command_buffer(self.raw, &begin_info)?
-        };
-
-        let mut barriers = Barriers::new();
-        barriers.add_image(
-            swapchain.current_image_handle().as_ref(),
-            ResourceState::UNDEFINED,
-            ResourceState::RENDER_TARGET,
-        );
-        self.pipeline_barrier(barriers);
-
-        let color_attachment = RenderColorAttachment::new()
-            .set_clear_value(vk::ClearColorValue {
-                float32: [1.0, 1.0, 1.0, 1.0],
-            })
-            .set_operation(RenderPassOperation::Clear)
-            .set_image_view(swapchain.current_image_view())
-            .set_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        let rendering_state =
-            RenderingState::new(swapchain.extent().width, swapchain.extent().height)
-                .add_color_attachment(color_attachment);
-        self.begin_rendering(rendering_state);
-
-        self.bind_graphics_pipeline(graphics_pipeline);
-        self.bind_descriptor_set(&descriptor_set, graphics_pipeline.raw_layout());
-        self.draw(36, 1, 0, 0);
-
-        self.end_rendering();
-
-        let mut barriers = Barriers::new();
-        barriers.add_image(
-            swapchain.current_image_handle().as_ref(),
-            ResourceState::RENDER_TARGET,
-            ResourceState::PRESENT,
-        );
-        self.pipeline_barrier(barriers);
-
-        unsafe { self.device.raw().end_command_buffer(self.raw)? };
-
-        Ok(())
     }
 }

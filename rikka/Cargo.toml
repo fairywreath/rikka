@@ -14,5 +14,6 @@ anyhow = "1.0.68"
 image = "0.24.5"
 gltf = "1.1.0"
 nalgebra = "0.32.1"
+ddsfile = "0.5.1"
 
 

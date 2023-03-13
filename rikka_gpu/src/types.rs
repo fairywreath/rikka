@@ -69,12 +69,34 @@ impl VertexInputState {
         }
     }
 
-    pub fn add_vertex_attribute(&mut self, vertex_attribute: VertexAttribute) {
-        self.vertex_attributes.push(vertex_attribute);
+    pub fn add_vertex_attribute(
+        mut self,
+        location: u32,
+        binding: u32,
+        offset: u32,
+        format: vk::Format,
+    ) -> Self {
+        self.vertex_attributes.push(VertexAttribute {
+            location,
+            binding,
+            offset,
+            format,
+        });
+        self
     }
 
-    pub fn add_vertex_stream(&mut self, vertex_stream: VertexStream) {
-        self.vertex_streams.push(vertex_stream);
+    pub fn add_vertex_stream(
+        mut self,
+        binding: u32,
+        stride: u32,
+        input_rate: vk::VertexInputRate,
+    ) -> Self {
+        self.vertex_streams.push(VertexStream {
+            binding,
+            stride,
+            input_rate,
+        });
+        self
     }
 }
 
@@ -121,9 +143,9 @@ pub struct DepthStencilState {
 impl DepthStencilState {
     pub fn new() -> Self {
         Self {
-            depth_test_enable: false,
-            depth_write_enable: false,
-            depth_compare: vk::CompareOp::LESS,
+            depth_test_enable: true,
+            depth_write_enable: true,
+            depth_compare: vk::CompareOp::LESS_OR_EQUAL,
         }
     }
 
@@ -228,7 +250,7 @@ impl RenderDepthStencilAttachment {
     pub fn new() -> Self {
         Self {
             format: vk::Format::UNDEFINED,
-            image_layout: vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
+            image_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             depth_operation: RenderPassOperation::DontCare,
             stencil_operation: RenderPassOperation::DontCare,
             clear_value: vk::ClearDepthStencilValue::default(),

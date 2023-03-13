@@ -169,8 +169,6 @@ impl Drop for Buffer {
             .unwrap()
             .free(self.allocation.take().unwrap())
             .unwrap();
-
-        log::info!("Buffer dropped");
     }
 }
 

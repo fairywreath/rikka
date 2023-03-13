@@ -82,6 +82,7 @@ fn vulkan_image_type_to_view_type(image_type: vk::ImageType) -> vk::ImageViewTyp
 fn format_has_depth(format: vk::Format) -> bool {
     match format {
         vk::Format::D32_SFLOAT_S8_UINT
+        | vk::Format::D32_SFLOAT
         | vk::Format::D24_UNORM_S8_UINT
         | vk::Format::D16_UNORM_S8_UINT => true,
         _ => false,

@@ -43,6 +43,7 @@ impl GraphicsPipelineDesc {
             depth_stencil_state: DepthStencilState::new(),
             blend_states: vec![],
             primitive_topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+            // XXX: Only need formats for this, maybe use a simpler version of this structure?
             rendering_state: RenderingState::new_dimensionless(),
             vertex_const_size: None,
             fragment_const_size: None,
@@ -82,6 +83,11 @@ impl GraphicsPipelineDesc {
 
     pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
         self.rasterization_state = rasterization_state;
+        self
+    }
+
+    pub fn set_vertex_input_state(mut self, vertex_input_state: VertexInputState) -> Self {
+        self.vertex_input_state = vertex_input_state;
         self
     }
 }
@@ -174,7 +180,7 @@ impl GraphicsPipeline {
             .width(desc.width as f32)
             .height(desc.height as f32)
             .min_depth(0.0)
-            .max_depth(0.0)
+            .max_depth(1.0)
             .build()];
         let scissors = [vk::Rect2D::builder()
             .offset(vk::Offset2D { x: 0, y: 0 })

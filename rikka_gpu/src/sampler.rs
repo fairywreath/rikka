@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub struct SamplerDesc {
-    pub min_flter: vk::Filter,
+    pub min_filter: vk::Filter,
     pub mag_filter: vk::Filter,
     pub mipmap_mode: vk::SamplerMipmapMode,
     pub address_mode_u: vk::SamplerAddressMode,
@@ -33,7 +33,7 @@ pub struct SamplerDesc {
 impl SamplerDesc {
     pub fn new() -> Self {
         Self {
-            min_flter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
             mag_filter: vk::Filter::LINEAR,
             mipmap_mode: vk::SamplerMipmapMode::LINEAR,
             address_mode_u: vk::SamplerAddressMode::REPEAT,
@@ -41,6 +41,16 @@ impl SamplerDesc {
             address_mode_w: vk::SamplerAddressMode::REPEAT,
             reduction_mode: vk::SamplerReductionMode::WEIGHTED_AVERAGE,
         }
+    }
+
+    pub fn set_min_filter(mut self, min_filter: vk::Filter) -> Self {
+        self.min_filter = min_filter;
+        self
+    }
+
+    pub fn set_mag_filter(mut self, mag_filter: vk::Filter) -> Self {
+        self.mag_filter = mag_filter;
+        self
     }
 }
 
@@ -53,7 +63,7 @@ pub struct Sampler {
 impl Sampler {
     pub fn new(device: Arc<Device>, desc: SamplerDesc) -> Result<Sampler> {
         let mut create_info = vk::SamplerCreateInfo::builder()
-            .min_filter(desc.min_flter)
+            .min_filter(desc.min_filter)
             .mag_filter(desc.mag_filter)
             .mipmap_mode(desc.mipmap_mode)
             .address_mode_u(desc.address_mode_u)

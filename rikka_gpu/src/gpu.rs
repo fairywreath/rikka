@@ -407,7 +407,7 @@ impl Gpu {
 
     pub fn copy_data_to_image<T: Copy>(
         // For command buffer manager mut access
-        &mut self,
+        &self,
         image: &Image,
         staging_buffer: &Buffer,
         data: &[T],
@@ -429,8 +429,43 @@ impl Gpu {
 
         command_buffer.upload_data_to_image(image, staging_buffer, data)?;
         self.graphics_queue
-            .submit(&[&command_buffer], vec![], vec![])?;
+            .submit(&[&command_buffer], Vec::new(), Vec::new())?;
 
+        self.wait_idle();
+
+        Ok(())
+    }
+
+    pub fn transition_image_layout(
+        &self,
+        image: &Image,
+        old_state: ResourceState,
+        new_state: ResourceState,
+    ) -> Result<()> {
+        let command_buffer = self
+            .transfer_command_pool
+            .allocate_command_buffer(vk::CommandBufferLevel::PRIMARY)?;
+        let command_buffer = CommandBuffer::new(
+            self.device.clone(),
+            command_buffer,
+            // XXX: Implement trait default for this
+            CommandBufferMetaData {
+                array_index: 0,
+                frame_index: 0,
+                thread_index: 0,
+            },
+            false,
+        );
+
+        let mut barriers = Barriers::new();
+        barriers.add_image(image, old_state, new_state);
+
+        command_buffer.begin()?;
+        command_buffer.pipeline_barrier(barriers);
+        command_buffer.end()?;
+
+        self.graphics_queue
+            .submit(&[&command_buffer], vec![], vec![])?;
         self.wait_idle();
 
         Ok(())
