@@ -1,6 +1,7 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use nalgebra::{Matrix4, Vector3};
+use nalgebra_glm as glm;
 use winit::{dpi::PhysicalPosition, event::*};
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
@@ -29,12 +30,22 @@ impl View {
         &self.matrix
     }
 
+    pub fn position(&self) -> &Vector3<f32> {
+        &self.position
+    }
+
     fn calculate_matrix(&mut self) {
         self.matrix = Matrix4::look_at_rh(
             &self.position.into(),
             &(self.position + self.forward()).into(),
             &UP_VECTOR,
         );
+
+        // self.matrix = glm::look_at_lh(
+        //     &self.position.into(),
+        //     &(self.position + self.forward()).into(),
+        //     &UP_VECTOR,
+        // );
     }
 
     fn forward(&self) -> Vector3<f32> {
@@ -64,6 +75,9 @@ impl View {
 
 pub struct Projection {
     aspect: f32,
+    width: u32,
+    height: u32,
+
     fovy: f32,
     znear: f32,
     zfar: f32,
@@ -74,6 +88,8 @@ impl Projection {
     pub fn new(width: u32, height: u32, fovy: f32, znear: f32, zfar: f32) -> Self {
         let mut proj = Self {
             aspect: width as f32 / height as f32,
+            width,
+            height,
             fovy,
             znear,
             zfar,
@@ -89,10 +105,17 @@ impl Projection {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.aspect = width as f32 / height as f32;
+        self.width = width;
+        self.height = height
     }
 
     fn calculate_matrix(&mut self) {
-        self.matrix = Matrix4::new_perspective(self.aspect, self.fovy, self.znear, self.zfar)
+        // self.matrix = Matrix4::new_perspective(self.aspect, self.fovy, self.znear, self.zfar);
+
+        // XXX: Fix perspective/view
+        self.matrix = glm::perspective_rh_zo(self.aspect, self.fovy, self.znear, self.zfar);
+        let v = self.matrix[(1, 1)];
+        self.matrix[(1, 1)] = -v;
     }
 }
 
@@ -199,7 +222,7 @@ impl FirstPersonCameraController {
         view.position += -forward * self.scroll * self.speed * self.sensitivity * dt;
         self.scroll = 0.0;
 
-        view.position.y += -(self.amount_up - self.amount_down) * self.speed * dt;
+        view.position.y += (self.amount_up - self.amount_down) * self.speed * dt;
 
         if self.mouse_pressed {
             view.rotate_x(self.rotate_horizontal * self.sensitivity * dt);

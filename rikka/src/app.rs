@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 
 use anyhow::{Context, Error, Result};
-use nalgebra::Matrix4;
+use nalgebra::{Matrix4, Vector3, Vector4};
 
 use rikka_gpu::{
     self as gpu, ash::vk, barriers::*, buffer::*, descriptor_set::*, gpu::*, image::*, pipeline::*,
@@ -12,6 +12,8 @@ use crate::renderer::{camera::*, gltf::*, *};
 
 pub struct RikkaApp {
     uniform_buffer: Arc<Buffer>,
+
+    zero_buffer: Arc<Buffer>,
 
     vertex_buffer: Arc<Buffer>,
 
@@ -35,11 +37,14 @@ struct UniformData {
     model: Matrix4<f32>,
     view: Matrix4<f32>,
     projection: Matrix4<f32>,
+
+    eye: Vector4<f32>,
+    light: Vector4<f32>,
 }
 
 impl RikkaApp {
-    pub fn new(gpu_desc: GpuDesc) -> Result<Self> {
-        let gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
+    pub fn new(gpu_desc: GpuDesc, gltf_file_name: &str) -> Result<Self> {
+        let mut gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
 
         let vertices = cube_vertices();
         let buffer_size = std::mem::size_of_val(&vertices);
@@ -53,11 +58,18 @@ impl RikkaApp {
         vertex_buffer.copy_data_to_buffer(&vertices)?;
         let vertex_buffer = Arc::new(vertex_buffer);
 
+        // let model = Matrix4::new_rotation(Vector3::new(0.0, std::f32::consts::FRAC_PI_4, 0.0))
+        // *Matrix4::new_scaling(0.008);
+        let model = Matrix4::new_scaling(0.004);
+        // let model = Matrix4::new_scaling(1.0);
+
         let uniform_data = UniformData {
-            model: Matrix4::new_scaling(0.02),
-            // model: Matrix4::new_scaling(1.0),
+            model,
             view: Matrix4::identity(),
             projection: Matrix4::identity(),
+
+            eye: Vector4::new(1.0, 1.0, 1.0, 1.0),
+            light: Vector4::new(-1.5, 2.5, -0.5, 1.0),
         };
         let uniform_buffer = gpu.create_buffer(
             BufferDesc::new()
@@ -66,6 +78,16 @@ impl RikkaApp {
                 .set_device_only(false),
         )?;
         let uniform_buffer = Arc::new(uniform_buffer);
+
+        let zero_buffer_data = Vector4::<f32>::new(0.0, 0.0, 0.0, 0.0);
+        let zero_buffer = gpu.create_buffer(
+            BufferDesc::new()
+                .set_size(std::mem::size_of_val(zero_buffer_data.as_slice()) as _)
+                .set_usage_flags(vk::BufferUsageFlags::VERTEX_BUFFER)
+                .set_device_only(false),
+        )?;
+        zero_buffer.copy_data_to_buffer(zero_buffer_data.as_slice())?;
+        let zero_buffer = Arc::new(zero_buffer);
 
         let depth_image_desc = ImageDesc::new(
             gpu.swapchain().extent().width,
@@ -88,11 +110,11 @@ impl RikkaApp {
                         vk::DescriptorType::UNIFORM_BUFFER,
                         0,
                         1,
-                        vk::ShaderStageFlags::VERTEX,
+                        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                     ))
                     .add_binding(DescriptorBinding::new(
-                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                        1,
+                        vk::DescriptorType::UNIFORM_BUFFER,
+                        4,
                         1,
                         vk::ShaderStageFlags::FRAGMENT,
                     )),
@@ -129,7 +151,13 @@ impl RikkaApp {
                 .add_vertex_stream(0, 12, vk::VertexInputRate::VERTEX)
                 // Tex coords
                 .add_vertex_attribute(1, 1, 0, vk::Format::R32G32_SFLOAT)
-                .add_vertex_stream(1, 8, vk::VertexInputRate::VERTEX);
+                .add_vertex_stream(1, 8, vk::VertexInputRate::VERTEX)
+                // Normals
+                .add_vertex_attribute(2, 2, 0, vk::Format::R32G32B32_SFLOAT)
+                .add_vertex_stream(2, 12, vk::VertexInputRate::VERTEX)
+                // Tangents
+                .add_vertex_attribute(3, 3, 0, vk::Format::R32G32B32A32_SFLOAT)
+                .add_vertex_stream(3, 16, vk::VertexInputRate::VERTEX);
 
             gpu.create_graphics_pipeline(
                 GraphicsPipelineDesc::new()
@@ -148,23 +176,23 @@ impl RikkaApp {
                                     .set_format(vk::Format::D32_SFLOAT),
                             ),
                     )
-                    .set_descriptor_set_layouts(vec![descriptor_set_layout.raw()])
+                    .add_descriptor_set_layout(descriptor_set_layout.raw())
+                    .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
                     .set_vertex_input_state(vertex_input_state)
                     .set_rasterization_state(
-                        RasterizationState::new().set_polygon_mode(vk::PolygonMode::FILL),
+                        RasterizationState::new()
+                            .set_polygon_mode(vk::PolygonMode::FILL)
+                            .set_cull_mode(vk::CullModeFlags::NONE),
                     ),
             )?
         };
 
-        // let gltf_scene =
-        // GltfScene::from_file(&gpu, "assets/Sponza/glTF/Sponza.gltf", &uniform_buffer).unwrap();
-
         let gltf_scene = GltfScene::from_file(
-            &gpu,
-            "assets/SunTemple-glTF/suntemple.gltf",
+            &mut gpu,
+            gltf_file_name,
             &uniform_buffer,
-        )
-        .unwrap();
+            &descriptor_set_layout,
+        )?;
 
         Ok(Self {
             gpu,
@@ -181,6 +209,7 @@ impl RikkaApp {
             gltf_scene,
 
             depth_image,
+            zero_buffer,
         })
     }
 
@@ -190,6 +219,8 @@ impl RikkaApp {
         // Update camera uniforms
         self.uniform_buffer
             .copy_data_to_buffer(std::slice::from_ref(&self.uniform_data))?;
+
+        // log::debug!("Current camere eye position {:?}", self.uniform_data.eye);
 
         let acquire_result = self.gpu.swapchain_acquire_next_image();
 
@@ -233,12 +264,12 @@ impl RikkaApp {
                     command_buffer.begin_rendering(rendering_state);
 
                     command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
-                    command_buffer.bind_descriptor_set(
-                        &self.descriptor_set,
-                        self.graphics_pipeline.raw_layout(),
-                    );
 
                     for mesh_draw in &self.gltf_scene.mesh_draws {
+                        if mesh_draw.textures_incomplete {
+                            continue;
+                        }
+
                         command_buffer.bind_vertex_buffer(
                             mesh_draw.position_buffer.as_ref().unwrap(),
                             0,
@@ -249,6 +280,21 @@ impl RikkaApp {
                             1,
                             mesh_draw.tex_coords_offset as _,
                         );
+                        command_buffer.bind_vertex_buffer(
+                            mesh_draw.normal_buffer.as_ref().unwrap(),
+                            2,
+                            mesh_draw.normal_offset as _,
+                        );
+
+                        if let Some(tangent_buffer) = &mesh_draw.tangent_buffer {
+                            command_buffer.bind_vertex_buffer(
+                                tangent_buffer.as_ref(),
+                                3,
+                                mesh_draw.tangent_offset as _,
+                            );
+                        } else {
+                            command_buffer.bind_vertex_buffer(self.zero_buffer.as_ref(), 3, 0);
+                        }
 
                         command_buffer.bind_index_buffer(
                             mesh_draw.index_buffer.as_ref().unwrap(),
@@ -258,6 +304,14 @@ impl RikkaApp {
                         command_buffer.bind_descriptor_set(
                             mesh_draw.descriptor_set.as_ref().unwrap(),
                             self.graphics_pipeline.raw_layout(),
+                            0,
+                        );
+
+                        // XXX: Bind this automatically in the GPU layer
+                        command_buffer.bind_descriptor_set(
+                            self.gpu.bindless_descriptor_set().as_ref(),
+                            self.graphics_pipeline.raw_layout(),
+                            1,
                         );
 
                         command_buffer.draw_indexed(mesh_draw.count, 1, 0, 0, 0);
@@ -311,37 +365,12 @@ impl RikkaApp {
     }
 
     pub fn prepare(&mut self) -> Result<()> {
-        // let texture_rgba8 = self.texture_data.clone().into_rgba8();
-        // let texture_data_bytes = texture_rgba8.as_raw();
-        // let texture_data_size = std::mem::size_of_val(texture_data_bytes.as_slice());
-
-        // log::info!(
-        //     "Texture data size: {:?}, dimensions: {:?}",
-        //     texture_data_size,
-        //     texture_rgba8.dimensions(),
-        // );
-
-        // let staging_buffer = self.gpu.create_buffer(
-        //     BufferDesc::new()
-        //         .set_device_only(false)
-        //         .set_size(texture_data_size as _)
-        //         .set_resource_usage(ResourceUsageType::Staging),
-        // )?;
-
-        // self.gpu.copy_data_to_image(
-        //     self.texture_image.as_ref(),
-        //     &staging_buffer,
-        //     texture_data_bytes,
-        // )?;
-
-        // let gltf_scene =
-        //     GltfScene::from_file(&mut self.gpu, "assets/SunTemple-glTF/suntemple.gltf").unwrap();
-
         Ok(())
     }
 
-    pub fn update_view(&mut self, view: &Matrix4<f32>) {
+    pub fn update_view(&mut self, view: &Matrix4<f32>, eye_position: &Vector3<f32>) {
         self.uniform_data.view = view.clone();
+        self.uniform_data.eye = Vector4::new(eye_position.x, eye_position.y, eye_position.z, 1.0);
     }
 
     pub fn update_projection(&mut self, projection: &Matrix4<f32>) {

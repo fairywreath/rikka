@@ -11,10 +11,10 @@ pub mod sampler;
 pub mod shader_state;
 pub mod types;
 
+pub mod constants;
+
 mod command_buffer;
-mod constants;
 mod device;
-mod escape;
 mod frame;
 mod instance;
 mod physical_device;

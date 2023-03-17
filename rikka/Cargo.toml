@@ -15,5 +15,6 @@ image = "0.24.5"
 gltf = "1.1.0"
 nalgebra = "0.32.1"
 ddsfile = "0.5.1"
+nalgebra-glm = "0.18.0"
 
 

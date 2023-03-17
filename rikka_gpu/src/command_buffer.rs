@@ -459,15 +459,38 @@ impl CommandBuffer {
         &self,
         descriptor_set: &DescriptorSet,
         raw_pipeline_layout: vk::PipelineLayout,
+        set_index: u32,
     ) {
         unsafe {
             self.device.raw().cmd_bind_descriptor_sets(
                 self.raw,
                 vk::PipelineBindPoint::GRAPHICS,
                 raw_pipeline_layout,
-                0,
+                set_index,
                 // std::slice::from_ref(&descriptor_set),
                 &[descriptor_set.raw()],
+                &[],
+            );
+        }
+    }
+
+    pub fn bind_descriptor_sets(
+        &self,
+        descriptor_sets: &[&DescriptorSet],
+        raw_pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+    ) {
+        let descriptor_sets = descriptor_sets
+            .into_iter()
+            .map(|set| set.raw())
+            .collect::<Vec<_>>();
+        unsafe {
+            self.device.raw().cmd_bind_descriptor_sets(
+                self.raw,
+                vk::PipelineBindPoint::GRAPHICS,
+                raw_pipeline_layout,
+                first_set,
+                &descriptor_sets,
                 &[],
             );
         }

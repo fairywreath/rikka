@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -9,17 +10,14 @@ use gltf::Gltf;
 use nalgebra::{Vector3, Vector4};
 
 use rikka_gpu::{
-    self as gpu, ash::vk, buffer::*, descriptor_set::*, gpu::Gpu, image::*, sampler::*,
+    self as gpu, ash::vk, buffer::*, constants::INVALID_BINDLESS_TEXTURE_INDEX, descriptor_set::*,
+    gpu::Gpu, image::*, sampler::*,
 };
 
-pub struct MaterialData {
-    pub base_color_factor: Vector4<f32>,
-}
+use crate::renderer::MaterialData;
 
 type BufferHandle = Arc<Buffer>;
-type ImageHandle = Arc<Image>;
 type SamplerHandle = Arc<Sampler>;
-type DescriptorSetHandle = Arc<DescriptorSet>;
 
 pub struct MeshDraw {
     pub position_buffer: Option<BufferHandle>,
@@ -30,6 +28,7 @@ pub struct MeshDraw {
 
     pub material_buffer: Option<BufferHandle>,
     pub material_data: MaterialData,
+    pub textures_incomplete: bool,
 
     pub position_offset: u32,
     pub index_offset: u32,
@@ -54,6 +53,9 @@ impl Default for MeshDraw {
             material_buffer: None,
             material_data: MaterialData {
                 base_color_factor: Vector4::new(0.0, 0.0, 0.0, 0.0),
+                diffuse_texture: INVALID_BINDLESS_TEXTURE_INDEX,
+                omr_texture: INVALID_BINDLESS_TEXTURE_INDEX,
+                normal_texture: INVALID_BINDLESS_TEXTURE_INDEX,
             },
 
             position_offset: 0,
@@ -64,21 +66,14 @@ impl Default for MeshDraw {
             tangent_offset: 0,
 
             descriptor_set: None,
+            textures_incomplete: false,
         }
     }
 }
 
 pub struct GltfScene {
-    pub gpu_buffers: Vec<BufferHandle>,
-    pub gpu_images: Vec<ImageHandle>,
-    pub gpu_samplers: Vec<SamplerHandle>,
-
-    pub buffers_data: Vec<Vec<u8>>,
-
     pub mesh_draws: Vec<MeshDraw>,
-
-    // XXX: Make nice descriptor set cache system in GPU
-    pub descriptor_set_layout: Arc<DescriptorSetLayout>,
+    _gpu_images: Vec<Arc<Image>>,
 }
 
 fn dxgi_format_to_vulkan_format(dxgi_format: DxgiFormat) -> vk::Format {
@@ -112,32 +107,23 @@ fn gltf_mag_filter_to_vulkan_filter(gltf_filter: gltf::texture::MagFilter) -> vk
 }
 
 impl GltfScene {
-    // XXX: Mut is required here for the copy function, it does not need to be mut however(change in gpu layer)
-    fn create_image_from_file(gpu: &Gpu, file_name: &str) -> Result<Image> {
-        // log::info!("Loading texture {}...", file_name,);
-
-        // XXX: Handle this nicely...
-        let mut relative_uri = String::from("assets/SunTemple-glTF/");
-        // let mut relative_uri = String::from("assets/Sponza/glTF/");
-        relative_uri.push_str(file_name);
-
-        let data = std::fs::read(relative_uri.clone())?;
+    fn create_image_from_file(gpu: &mut Gpu, file_name: &str) -> Result<Arc<Image>> {
+        let data = std::fs::read(file_name)?;
 
         if let Ok(dds) = ddsfile::Dds::read(&mut std::io::Cursor::new(&data)) {
             let mut vulkan_format = vk::Format::UNDEFINED;
 
             if let Some(format) = dds.get_dxgi_format() {
-                log::info!("Format is DXGI {:?}", format);
                 vulkan_format = dxgi_format_to_vulkan_format(format);
             } else if let Some(format) = dds.get_d3d_format() {
-                log::info!("Format is D3D {:?}", format);
                 todo!()
             }
 
             let image_desc = ImageDesc::new(dds.get_width(), dds.get_height(), 1)
                 .set_format(vulkan_format)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = gpu.create_image(image_desc)?;
+            let mut texture_image = gpu.create_image(image_desc)?;
+            let texture_image = Arc::new(texture_image);
 
             // XXX: Handle mip maps and texture layers
 
@@ -151,9 +137,7 @@ impl GltfScene {
                     .set_resource_usage(gpu::types::ResourceUsageType::Staging),
             )?;
 
-            gpu.copy_data_to_image(&texture_image, &staging_buffer, texture_data_bytes)?;
-
-            log::info!("Finished loading image {}", file_name);
+            gpu.copy_data_to_image(texture_image.clone(), &staging_buffer, texture_data_bytes)?;
 
             Ok(texture_image)
         } else {
@@ -162,16 +146,12 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dynamic_image.width(), dynamic_image.height(), 1)
                 .set_format(vk::Format::R8G8B8A8_UNORM)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = gpu.create_image(image_desc)?;
+            let mut texture_image = gpu.create_image(image_desc)?;
+            let texture_image = Arc::new(texture_image);
 
             let texture_rgba8 = dynamic_image.clone().into_rgba8();
             let texture_data_bytes = texture_rgba8.as_raw();
             let texture_data_size = std::mem::size_of_val(texture_data_bytes.as_slice());
-
-            // log::info!(
-            //     "Texture data size: {:?}, dimensions: {:?}",
-            //     texture_data_size,
-            // );
 
             let staging_buffer = gpu.create_buffer(
                 BufferDesc::new()
@@ -180,24 +160,30 @@ impl GltfScene {
                     .set_resource_usage(gpu::types::ResourceUsageType::Staging),
             )?;
 
-            gpu.copy_data_to_image(&texture_image, &staging_buffer, texture_data_bytes)?;
-
-            // log::info!("Finished loading image {}", file_name);
+            gpu.copy_data_to_image(texture_image.clone(), &staging_buffer, texture_data_bytes)?;
 
             Ok(texture_image)
         }
     }
 
-    fn load_images(gpu: &Gpu, images: gltf::iter::Images) -> Result<Vec<Image>> {
+    fn load_images(
+        gpu: &mut Gpu,
+        root_path_buf: &PathBuf,
+        images: gltf::iter::Images,
+    ) -> Result<Vec<Arc<Image>>> {
         let mut gpu_images = Vec::with_capacity(images.len());
 
         let image_loading_start_time = Instant::now();
 
         for image in images {
             let gpu_image = match image.source() {
-                gltf::image::Source::Uri { uri, .. } => GltfScene::create_image_from_file(gpu, uri),
+                gltf::image::Source::Uri { uri, .. } => {
+                    let mut uri_path = root_path_buf.clone();
+                    uri_path.push(uri);
+                    GltfScene::create_image_from_file(gpu, uri_path.to_str().unwrap())
+                }
                 gltf::image::Source::View { view, .. } => {
-                    todo!()
+                    panic!("glTF image loading from view not implemented!");
                 }
             }?;
 
@@ -235,6 +221,7 @@ impl GltfScene {
     }
 
     fn load_buffers_data(
+        root_path_buf: &PathBuf,
         buffers: gltf::iter::Buffers,
         blob: Option<Vec<u8>>,
     ) -> Result<Vec<Vec<u8>>> {
@@ -250,13 +237,10 @@ impl GltfScene {
                     Vec::<u8>::new()
                 }
                 gltf::buffer::Source::Uri(uri) => {
-                    // XXX: Get relative directory...
-                    let mut relative_uri = String::from("assets/SunTemple-glTF/");
-                    // let mut relative_uri = String::from("assets/Sponza/glTF/");
-                    relative_uri.push_str(uri);
+                    let mut uri_path = root_path_buf.clone();
+                    uri_path.push(uri);
 
-                    let binary_data =
-                        std::fs::read(relative_uri).context("Failed to read gltf uri")?;
+                    let binary_data = std::fs::read(uri_path).context("Failed to read gltf uri")?;
                     binary_data
                 }
             };
@@ -287,8 +271,6 @@ impl GltfScene {
 
             let data = &buffers_data[buffer_view.buffer().index()][range_start..range_end];
 
-            // log::debug!("Buffer view {} data: {:?}", buffer_view.index(), data);
-
             let gpu_buffer = gpu.create_buffer(
                 BufferDesc::new()
                     .set_size(length as _)
@@ -305,58 +287,28 @@ impl GltfScene {
         Ok(gpu_buffers)
     }
 
-    fn load_materials() {
-        todo!()
-    }
+    pub fn from_file(
+        gpu: &mut Gpu,
+        file_name: &str,
+        uniform_buffer: &Arc<Buffer>,
+        descriptor_set_layout: &Arc<DescriptorSetLayout>,
+    ) -> Result<Self> {
+        let mut root_path_buf = PathBuf::from(file_name);
+        root_path_buf.pop();
 
-    fn load_meshes(gpu: &Gpu, meshes: gltf::iter::Meshes) -> Result<Vec<MeshDraw>> {
-        todo!()
-    }
-
-    // XXX: Make descriptor set management nicer
-    pub fn from_file(gpu: &Gpu, file_name: &str, uniform_buffer: &Arc<Buffer>) -> Result<Self> {
         let mut gltf_file = Gltf::open(file_name)?;
 
-        // XXX: Integrate this insde GPU?
-        let default_sampler = Arc::new(gpu.create_sampler(SamplerDesc::new())?);
-
-        let mut gpu_images = GltfScene::load_images(gpu, gltf_file.images())?;
-        for image in &mut gpu_images {
-            image.set_linked_sampler(default_sampler.clone());
-        }
-
-        let gpu_images = gpu_images
-            .into_iter()
-            .map(|image| Arc::new(image))
-            .collect::<Vec<_>>();
+        let gpu_images = GltfScene::load_images(gpu, &root_path_buf, gltf_file.images())?;
 
         let gpu_samplers = GltfScene::load_samplers(gpu, gltf_file.samplers())?;
 
         let gltf_blob = gltf_file.blob.take();
-        let buffers_data = GltfScene::load_buffers_data(gltf_file.buffers(), gltf_blob)?;
+        let buffers_data =
+            GltfScene::load_buffers_data(&root_path_buf, gltf_file.buffers(), gltf_blob)?;
+
+        log::info!("Buffers data length {}", buffers_data[0].len());
 
         let gpu_buffers = GltfScene::load_buffer_views(gpu, gltf_file.views(), &buffers_data)?;
-
-        // let gltf_materials = gltf_file.materials();
-
-        let descriptor_set_layout = gpu
-            .create_descriptor_set_layout(
-                DescriptorSetLayoutDesc::new()
-                    .add_binding(DescriptorBinding::new(
-                        vk::DescriptorType::UNIFORM_BUFFER,
-                        0,
-                        1,
-                        vk::ShaderStageFlags::VERTEX,
-                    ))
-                    .add_binding(DescriptorBinding::new(
-                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                        1,
-                        1,
-                        vk::ShaderStageFlags::FRAGMENT,
-                    )),
-            )
-            .unwrap();
-        let descriptor_set_layout = Arc::new(descriptor_set_layout);
 
         let gltf_meshes = gltf_file.meshes();
         let mut mesh_draws = Vec::with_capacity(gltf_meshes.len());
@@ -386,6 +338,11 @@ impl GltfScene {
                     mesh_draw.index_buffer = Some(gpu_buffers[buffer_view.index()].clone());
                     mesh_draw.index_offset = indices_accessor.offset() as _;
                     mesh_draw.count = indices_accessor.count() as _;
+                    // log::info!(
+                    //     "Mesh index {} indices count {}",
+                    //     primitive.index(),
+                    //     mesh_draw.count
+                    // );
                 } else {
                     return Err(anyhow!("glTF indices accessor does not exist!"));
                 }
@@ -412,7 +369,10 @@ impl GltfScene {
                     let buffer_view = tangents_accessor.view().unwrap();
                     mesh_draw.tangent_buffer = Some(gpu_buffers[buffer_view.index()].clone());
                     mesh_draw.tangent_offset = tangents_accessor.offset() as _;
+
+                    // log::info!("Contains tangents!");
                 } else {
+                    // log::info!("Does not contain tangents! index {}", primitive.index());
                     // return Err(anyhow!(r#"glTF tangents accessor does not exist!"#));
                 }
 
@@ -428,12 +388,75 @@ impl GltfScene {
                     // XXX: Handle samplers properly
                     // let diffuse_sampler = gpu_samplers[diffuse_texture.sampler().index()].clone();
                 } else {
-                    todo!()
+                    log::info!(
+                        "Does not contain base color texture! primitive index {}, material index {}",
+                        primitive.index(), material.index().unwrap(),
+                    );
+
+                    // XXX: Use a default texture or use a different shader pipeline
+                    mesh_draw.textures_incomplete = true;
+                    mesh_draws.push(mesh_draw);
+                    continue;
                 }
+
+                let mut omr_image = None;
+                if let Some(omr_info) = pbr_material.metallic_roughness_texture() {
+                    let omr_texture = omr_info.texture();
+                    omr_image = Some(gpu_images[omr_texture.source().index()].clone());
+                } else {
+                    log::info!(
+                        "Does not contain metallic roughness texture! primitive index {}",
+                        primitive.index()
+                    );
+
+                    // XXX: Use a default texture or use a different shader pipeline
+                    mesh_draw.textures_incomplete = true;
+                    mesh_draws.push(mesh_draw);
+                    continue;
+                }
+
+                let mut normal_image = None;
+                if let Some(normal_info) = material.normal_texture() {
+                    let normal_texture = normal_info.texture();
+                    normal_image = Some(gpu_images[normal_texture.source().index()].clone());
+                } else {
+                    log::info!(
+                        "Does not contain normal texture! index {}",
+                        primitive.index()
+                    );
+
+                    // XXX: Use a default texture or use a different shader pipeline
+                    mesh_draw.textures_incomplete = true;
+                    mesh_draws.push(mesh_draw);
+                    continue;
+                }
+
+                mesh_draw.material_data = MaterialData {
+                    base_color_factor: pbr_material.base_color_factor().into(),
+                    diffuse_texture: diffuse_image.clone().unwrap().bindless_index(),
+                    omr_texture: omr_image.clone().unwrap().bindless_index(),
+                    normal_texture: normal_image.clone().unwrap().bindless_index(),
+                };
+                let material_buffer = gpu.create_buffer(
+                    BufferDesc::new()
+                        .set_size(std::mem::size_of::<MaterialData>() as _)
+                        .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER)
+                        .set_device_only(false),
+                )?;
+                material_buffer
+                    .copy_data_to_buffer(std::slice::from_ref(&mesh_draw.material_data))?;
+                mesh_draw.material_buffer = Some(Arc::new(material_buffer));
+                // log::info!(
+                //     "Primitive diffuse texture index: {}",
+                //     mesh_draw.material_data.diffuse_texture,
+                // );
 
                 let binding_resources = vec![
                     DescriptorSetBindingResource::buffer(uniform_buffer.clone(), 0),
-                    DescriptorSetBindingResource::image(diffuse_image.unwrap(), 1),
+                    DescriptorSetBindingResource::buffer(
+                        mesh_draw.material_buffer.clone().unwrap(),
+                        4,
+                    ),
                 ];
 
                 mesh_draw.descriptor_set = Some(
@@ -448,16 +471,8 @@ impl GltfScene {
         }
 
         Ok(Self {
-            gpu_buffers,
-            gpu_images,
-            gpu_samplers,
-
-            buffers_data,
             mesh_draws,
-
-            descriptor_set_layout,
+            _gpu_images: gpu_images,
         })
     }
-
-    // XXX: Have function to create pipeline vertex input, etc. This should be handled by the shader reflection system no?
 }

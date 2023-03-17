@@ -104,6 +104,7 @@ pub struct DescriptorSetLayoutDesc {
     pub bindings: Vec<DescriptorBinding>,
     pub bindless: bool,
     pub dynamic: bool,
+    pub flags: vk::DescriptorSetLayoutCreateFlags,
 }
 
 impl DescriptorSetLayoutDesc {
@@ -112,6 +113,7 @@ impl DescriptorSetLayoutDesc {
             bindings: vec![],
             bindless: false,
             dynamic: false,
+            flags: vk::DescriptorSetLayoutCreateFlags::empty(),
         }
     }
 
@@ -127,6 +129,11 @@ impl DescriptorSetLayoutDesc {
 
     pub fn set_dynamic(mut self, dynamic: bool) -> Self {
         self.dynamic = dynamic;
+        self
+    }
+
+    pub fn set_flags(mut self, flags: vk::DescriptorSetLayoutCreateFlags) -> Self {
+        self.flags = flags;
         self
     }
 }
@@ -172,11 +179,11 @@ impl DescriptorSetLayout {
         for (array_index, binding) in desc.bindings.iter().enumerate() {
             binding_index_to_array_index[binding.index as usize] = array_index as usize;
 
-            if desc.bindless && can_descriptor_type_be_bindless(binding.descriptor_type) {
-                // XXX: Handle this nicer...
-                vulkan_bindings.push(vk::DescriptorSetLayoutBinding::default());
-                continue;
-            }
+            // if desc.bindless && can_descriptor_type_be_bindless(binding.descriptor_type) {
+            //     // XXX: Handle this nicer...
+            //     vulkan_bindings.push(vk::DescriptorSetLayoutBinding::default());
+            //     continue;
+            // }
 
             let vulkan_binding = {
                 let vulkan_binding = vk::DescriptorSetLayoutBinding::builder()
@@ -196,17 +203,21 @@ impl DescriptorSetLayout {
             vulkan_bindings.push(vulkan_binding);
         }
 
-        let mut create_info =
-            vk::DescriptorSetLayoutCreateInfo::builder().bindings(&vulkan_bindings);
+        let mut create_info = vk::DescriptorSetLayoutCreateInfo::builder()
+            .bindings(&vulkan_bindings)
+            .flags(desc.flags);
 
         let raw = {
             if desc.bindless {
                 let binding_flags = vec![
                     vk::DescriptorBindingFlags::PARTIALLY_BOUND
-                        | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
-                        | vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
+                        // | vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT
+                        | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND;
                     vulkan_bindings.len()
                 ];
+
+                log::info!("Bindless vulkan bindings length {}", vulkan_bindings.len());
+
                 let mut binding_flags_info =
                     vk::DescriptorSetLayoutBindingFlagsCreateInfo::builder()
                         .binding_flags(&binding_flags);
@@ -407,7 +418,7 @@ impl DescriptorSet {
             device,
             raw: raws[0],
             // binding_resources: vec![],
-            pool: pool,
+            pool,
             layout: desc.layout,
         };
 
@@ -429,6 +440,8 @@ impl DescriptorSet {
     pub fn update(&mut self, binding_resources: &[DescriptorSetBindingResource]) -> Result<()> {
         let mut vulkan_write_descriptors =
             Vec::<vk::WriteDescriptorSet>::with_capacity(binding_resources.len());
+
+        // XXX: These arrays are not needed...
         let mut descriptor_buffer_infos = Vec::<vk::DescriptorBufferInfo>::new();
         let mut descriptor_image_infos = Vec::<vk::DescriptorImageInfo>::new();
 
@@ -454,6 +467,8 @@ impl DescriptorSet {
                 &mut descriptor_image_infos,
             ));
         }
+
+        descriptor_image_infos.clear();
 
         unsafe {
             self.device

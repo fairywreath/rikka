@@ -12,7 +12,7 @@ use crate::{
     barriers::*,
     buffer::*,
     command_buffer::*,
-    constants,
+    constants::{self, INVALID_BINDLESS_TEXTURE_INDEX},
     descriptor_set::*,
     device::Device,
     frame::*,
@@ -27,6 +27,7 @@ use crate::{
     surface::Surface,
     swapchain::{Swapchain, SwapchainDesc},
     synchronization::{Semaphore, SemaphoreType},
+    types::ImageResourceUpdate,
 };
 
 pub struct Gpu {
@@ -35,7 +36,18 @@ pub struct Gpu {
 
     // XXX: Use escape/terminals for this?
     global_descriptor_pool: Arc<DescriptorPool>,
+
+    bindless_images_to_update: Vec<ImageResourceUpdate>,
+
+    // XXX: Handle image destruction for bindless images
+    // bindless_image_returned_indices: Vec<u32>,
+    bindless_image_new_index: u32,
+
+    bindless_descriptor_set: Arc<DescriptorSet>,
+    bindless_descriptor_set_layout: Arc<DescriptorSetLayout>,
     bindless_descriptor_pool: Arc<DescriptorPool>,
+
+    default_sampler: Arc<Sampler>,
 
     allocator: Arc<Mutex<Allocator>>,
 
@@ -206,17 +218,48 @@ impl Gpu {
             device.clone(),
             DescriptorPoolDesc::new()
                 .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-                // Only 1 set for all bindless images.
-                .set_max_sets(1)
+                // Only 1 set for all bindless images?
+                // .set_max_sets(1)
+                .set_max_sets(constants::MAX_NUM_BINDLESS_RESOURCECS * 2)
                 .add_pool_size(
                     vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                     constants::MAX_NUM_BINDLESS_RESOURCECS,
                 )
                 .add_pool_size(
-                    vk::DescriptorType::SAMPLER,
+                    vk::DescriptorType::STORAGE_IMAGE,
                     constants::MAX_NUM_BINDLESS_RESOURCECS,
                 ),
         )?;
+        let bindless_descriptor_pool = Arc::new(bindless_descriptor_pool);
+
+        let bindless_descriptor_set_layout_desc = DescriptorSetLayoutDesc::new()
+            .set_flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+            .set_bindless(true)
+            .add_binding(DescriptorBinding::new(
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX,
+                constants::MAX_NUM_BINDLESS_RESOURCECS,
+                vk::ShaderStageFlags::FRAGMENT,
+            ))
+            .add_binding(DescriptorBinding::new(
+                vk::DescriptorType::STORAGE_IMAGE,
+                constants::BINDLESS_SET_STORAGE_IMAGE_INDEX,
+                constants::MAX_NUM_BINDLESS_RESOURCECS,
+                vk::ShaderStageFlags::FRAGMENT,
+            ));
+
+        let bindless_descriptor_set_layout =
+            DescriptorSetLayout::new(device.clone(), bindless_descriptor_set_layout_desc)?;
+        let bindless_descriptor_set_layout = Arc::new(bindless_descriptor_set_layout);
+
+        let bindless_descriptor_set = DescriptorSet::new(
+            device.clone(),
+            DescriptorSetDesc::new(bindless_descriptor_set_layout.clone())
+                .set_pool(bindless_descriptor_pool.clone()),
+        )?;
+        let bindless_descriptor_set = Arc::new(bindless_descriptor_set);
+
+        let default_sampler = Arc::new(Sampler::new(device.clone(), SamplerDesc::new())?);
 
         // XXX: Actually use transfer command queue for this, currently use graphics since need different queues for resource state transitions
         let transfer_command_pool =
@@ -243,9 +286,18 @@ impl Gpu {
             frame_synchronization_manager,
 
             global_descriptor_pool: Arc::new(global_descriptor_pool),
-            bindless_descriptor_pool: Arc::new(bindless_descriptor_pool),
+
+            bindless_descriptor_pool,
+            bindless_descriptor_set_layout,
+            bindless_descriptor_set,
+
+            bindless_images_to_update: Vec::new(),
 
             transfer_command_pool,
+
+            default_sampler,
+
+            bindless_image_new_index: 0,
         })
     }
 
@@ -253,8 +305,13 @@ impl Gpu {
         Buffer::new(self.device.clone(), self.allocator.clone(), desc)
     }
 
-    pub fn create_image(&self, desc: ImageDesc) -> Result<Image> {
-        Image::new(self.device.clone(), self.allocator.clone(), desc)
+    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Image> {
+        let mut image = Image::new(self.device.clone(), self.allocator.clone(), desc)?;
+
+        image.set_bindless_index(self.bindless_image_new_index);
+        self.bindless_image_new_index += 1;
+
+        Ok(image)
     }
 
     pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Sampler> {
@@ -350,8 +407,8 @@ impl Gpu {
 
         self.frame_synchronization_manager.advance_frame_counters();
 
-        // XXX:
-        // Update bindless textures?
+        self.update_bindless_images();
+
         // Destroy deletion queue resources?
 
         Ok(present_result)
@@ -407,8 +464,8 @@ impl Gpu {
 
     pub fn copy_data_to_image<T: Copy>(
         // For command buffer manager mut access
-        &self,
-        image: &Image,
+        &mut self,
+        image: Arc<Image>,
         staging_buffer: &Buffer,
         data: &[T],
     ) -> Result<()> {
@@ -427,11 +484,18 @@ impl Gpu {
             false,
         );
 
-        command_buffer.upload_data_to_image(image, staging_buffer, data)?;
+        command_buffer.upload_data_to_image(image.as_ref(), staging_buffer, data)?;
         self.graphics_queue
             .submit(&[&command_buffer], Vec::new(), Vec::new())?;
 
         self.wait_idle();
+
+        let update = ImageResourceUpdate {
+            frame: self.frame_synchronization_manager.current_frame_index(),
+            image: Some(image),
+            sampler: None,
+        };
+        self.bindless_images_to_update.push(update);
 
         Ok(())
     }
@@ -469,6 +533,59 @@ impl Gpu {
         self.wait_idle();
 
         Ok(())
+    }
+
+    // XXX: Properly integrate this somewhere internally
+    pub fn bindless_descriptor_set_layout(&self) -> &Arc<DescriptorSetLayout> {
+        &self.bindless_descriptor_set_layout
+    }
+
+    pub fn bindless_descriptor_set(&self) -> &Arc<DescriptorSet> {
+        &self.bindless_descriptor_set
+    }
+
+    fn add_bindless_image_update(&mut self, update: ImageResourceUpdate) {
+        self.bindless_images_to_update.push(update);
+    }
+
+    pub fn update_bindless_images(&mut self) {
+        let mut write_descriptors = Vec::new();
+
+        // Need this here to store image descriptors
+        let mut image_descriptors = Vec::new();
+
+        for update in self.bindless_images_to_update.drain(..) {
+            if let Some(image) = update.image {
+                assert!(image.bindless_index() != INVALID_BINDLESS_TEXTURE_INDEX);
+
+                let mut image_descriptor = vk::DescriptorImageInfo::builder()
+                    .image_view(image.raw_view())
+                    .sampler(self.default_sampler.raw())
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                if let Some(sampler) = update.sampler {
+                    image_descriptor = image_descriptor.sampler(sampler.raw());
+                } else {
+                    image_descriptor = image_descriptor.sampler(self.default_sampler.raw());
+                }
+                image_descriptors.push(image_descriptor);
+
+                let write_descriptor = vk::WriteDescriptorSet::builder()
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER) //
+                    .dst_array_element(image.bindless_index())
+                    .dst_set(self.bindless_descriptor_set.raw())
+                    .dst_binding(constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX)
+                    .image_info(std::slice::from_ref(image_descriptors.last().unwrap()));
+                write_descriptors.push(write_descriptor.build());
+            }
+        }
+
+        if !write_descriptors.is_empty() {
+            unsafe {
+                self.device
+                    .raw()
+                    .update_descriptor_sets(&write_descriptors, &[]);
+            }
+        }
     }
 }
 

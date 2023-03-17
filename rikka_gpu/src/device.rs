@@ -51,6 +51,8 @@ impl Device {
             .map(|ext| ext.as_ptr())
             .collect::<Vec<_>>();
 
+        // XXX: Properly check that these features are supported by the GPU(done in physical device creation)
+
         let mut vulkan11_features =
             vk::PhysicalDeviceVulkan11Features::builder().shader_draw_parameters(true);
         let mut vulkan12_features = vk::PhysicalDeviceVulkan12Features::builder()
@@ -58,6 +60,8 @@ impl Device {
             .runtime_descriptor_array(true)
             .descriptor_binding_partially_bound(true)
             .descriptor_binding_variable_descriptor_count(true)
+            .descriptor_binding_sampled_image_update_after_bind(true)
+            .descriptor_binding_storage_image_update_after_bind(true)
             .timeline_semaphore(true)
             .shader_sampled_image_array_non_uniform_indexing(true)
             .buffer_device_address(true);

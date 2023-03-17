@@ -2,14 +2,16 @@
 - [X] Basic Vulkan setup and abstractions
 - [X] Simple triangle and image loading examples
 - [X] Add camera system and window camera controller
-- [ ] GLTF scene rendering + basic PBR materials
-- [ ] Improve GPU uploads using transfer queue and asynchronous uploads
+- [X] GLTF scene rendering + basic PBR materials
+- [X] Bindless textures support
 - [ ] Implement shader reflections and automatic descriptor set generation
-- [ ] GPU timetamps and pipeline statistics queries
-- [ ] Add immediate mode GUI support for scene management and visualization
+- [ ] Improve GPU uploads using transfer queue and asynchronous uploads
+- [ ] Major code refactoring and unsafe code verification(mainly on the GPU/vulkan abstraction layer)
 - [ ] Implement pipeline layout generation and GPU technique serializations for "hot reload"s of graphics techniques
 - [ ] Implement a render graph system
-- [ ] Major code refactoring and unsafe code verification
+- [ ] Proper glTF scene loading with animations and skinning
+- [ ] GPU timetamps and pipeline statistics queries
+- [ ] Add immediate mode GUI support for scene management and visualization
 - [ ] Completely decouple vulkan types from rikka_gpu public API(eg. no vulkan type in resource creation descriptions)
 - [ ] Implement basic mesh shading pipeline
 - [ ] Implement clustered shading

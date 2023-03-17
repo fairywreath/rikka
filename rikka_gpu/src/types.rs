@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
 use ash::vk;
+
+use crate::{image::Image, sampler::Sampler};
 
 pub enum PipelineStage {
     DrawIndirect,
@@ -327,4 +331,13 @@ impl RenderingState {
         self.depth_attachment = Some(attachment);
         self
     }
+}
+
+#[derive(Clone)]
+pub struct ImageResourceUpdate {
+    pub frame: u64,
+
+    // XXX: Need strong reference here?
+    pub image: Option<Arc<Image>>,
+    pub sampler: Option<Arc<Sampler>>,
 }

@@ -1,6 +1,18 @@
+use nalgebra::Vector4;
+
 pub mod camera;
 pub mod gltf;
 pub mod renderer;
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct MaterialData {
+    pub base_color_factor: Vector4<f32>,
+    pub diffuse_texture: u32,
+    // Occulsion metallic roughness
+    pub omr_texture: u32,
+    pub normal_texture: u32,
+}
 
 #[derive(Clone, Copy)]
 #[repr(C)]

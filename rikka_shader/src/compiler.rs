@@ -29,15 +29,6 @@ pub fn compile_shader_through_glslangvalidator_cli(
         temp_file.write_all(shader_source.as_bytes())?;
     }
 
-    // let command_string = format!(
-    //     "glslangvalidator.exe {} -V --target-env vulkan1.3 -o {} -S {} --D {}",
-    //     temp_file_name,
-    //     destination_file_name,
-    //     shader_type.to_glslang_compiler_extension(),
-    //     shader_type.to_glslang_stage_defines()
-    // );
-    // println!("Command to execute: {}", command_string);
-
     let command_output = Command::new("glslangvalidator.exe")
         .arg(temp_file_name)
         .arg("-V")
@@ -53,8 +44,10 @@ pub fn compile_shader_through_glslangvalidator_cli(
         let shader_data = read_shader_binary_file(destination_file_name)?;
         Ok(shader_data)
     } else {
-        // XXX: Print command output nicely here
-        // println!("Command output: {:?}", command_output);
+        log::error!(
+            "glslangValidator returned error: {:?}",
+            command_output.stderr
+        );
 
         Err(anyhow::anyhow!(
             "Failed to compile shader through glslangvalidator!"

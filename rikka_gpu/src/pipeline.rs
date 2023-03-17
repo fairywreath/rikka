@@ -81,6 +81,14 @@ impl GraphicsPipelineDesc {
         self
     }
 
+    pub fn add_descriptor_set_layout(
+        mut self,
+        descriptor_set_layout: vk::DescriptorSetLayout,
+    ) -> Self {
+        self.descriptor_set_layouts.push(descriptor_set_layout);
+        self
+    }
+
     pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
         self.rasterization_state = rasterization_state;
         self

@@ -14,6 +14,7 @@ use gpu_allocator::{
 use crate::{
     barriers::ResourceState,
     command_buffer,
+    constants::INVALID_BINDLESS_TEXTURE_INDEX,
     device::Device,
     frame::{self, FrameThreadPoolsManager},
     pipeline::*,
@@ -122,6 +123,8 @@ pub struct Image {
 
     sampler: Option<Arc<Sampler>>,
     owning: bool,
+
+    bindless_index: u32,
 }
 
 impl Image {
@@ -215,6 +218,7 @@ impl Image {
             image_type: desc.image_type,
             sampler: None,
             owning: true,
+            bindless_index: u32::MAX,
         })
     }
 
@@ -249,7 +253,16 @@ impl Image {
             image_type: vk::ImageType::TYPE_2D,
             sampler: None,
             owning: false,
+            bindless_index: INVALID_BINDLESS_TEXTURE_INDEX,
         }
+    }
+
+    pub(crate) fn set_bindless_index(&mut self, index: u32) {
+        self.bindless_index = index;
+    }
+
+    pub fn bindless_index(&self) -> u32 {
+        self.bindless_index
     }
 
     fn create_vulkan_image_view(device: &Device, desc: ImageViewDesc) -> Result<vk::ImageView> {
