@@ -549,7 +549,7 @@ impl Gpu {
     }
 
     pub fn update_bindless_images(&mut self) {
-        let mut write_descriptors = Vec::new();
+        // let mut write_descriptors = Vec::new();
 
         // Need this here to store image descriptors
         let mut image_descriptors = Vec::new();
@@ -574,18 +574,25 @@ impl Gpu {
                     .dst_array_element(image.bindless_index())
                     .dst_set(self.bindless_descriptor_set.raw())
                     .dst_binding(constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX)
+                    // XXX: This is dangerous, change this!
                     .image_info(std::slice::from_ref(image_descriptors.last().unwrap()));
-                write_descriptors.push(write_descriptor.build());
+                // write_descriptors.push(write_descriptor.build());
+
+                unsafe {
+                    self.device
+                        .raw()
+                        .update_descriptor_sets(std::slice::from_ref(&write_descriptor), &[]);
+                }
             }
         }
 
-        if !write_descriptors.is_empty() {
-            unsafe {
-                self.device
-                    .raw()
-                    .update_descriptor_sets(&write_descriptors, &[]);
-            }
-        }
+        // if !write_descriptors.is_empty() {
+        //     unsafe {
+        //         self.device
+        //             .raw()
+        //             .update_descriptor_sets(&write_descriptors, &[]);
+        //     }
+        // }
     }
 }
 

@@ -29,7 +29,13 @@ pub fn compile_shader_through_glslangvalidator_cli(
         temp_file.write_all(shader_source.as_bytes())?;
     }
 
-    let command_output = Command::new("glslangvalidator.exe")
+    let command_name = match std::env::consts::OS {
+        "windows" => "glslangvalidator.exe",
+        "linux" => "glslangValidator",
+        _ => "glslangValidator",
+    };
+
+    let command_output = Command::new(command_name)
         .arg(temp_file_name)
         .arg("-V")
         .args(["--target-env", "vulkan1.3"])
