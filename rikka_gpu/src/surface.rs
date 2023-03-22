@@ -1,6 +1,10 @@
 use anyhow::Result;
-use ash::{extensions::khr, vk};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+
+use rikka_core::{
+    ash::{self, extensions::khr},
+    vk,
+};
 
 use crate::instance::Instance;
 

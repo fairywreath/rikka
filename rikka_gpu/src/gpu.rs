@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex, Weak};
 
 use anyhow::{Context, Result};
-use ash::vk;
 use gpu_allocator::{
     vulkan::{Allocator, AllocatorCreateDesc},
     AllocatorDebugSettings,
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use rikka_core::{ash, vk};
 
 use crate::{
     barriers::*,
@@ -552,6 +552,7 @@ impl Gpu {
         // let mut write_descriptors = Vec::new();
 
         // Need this here to store image descriptors
+        // XXX: This is dangerous!
         let mut image_descriptors = Vec::new();
 
         for update in self.bindless_images_to_update.drain(..) {

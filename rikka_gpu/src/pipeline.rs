@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use ash::vk::{self, Win32KeyedMutexAcquireReleaseInfoKHRBuilder};
+use rikka_core::vk::{self, Win32KeyedMutexAcquireReleaseInfoKHRBuilder};
 
 use crate::{
     command_buffer,

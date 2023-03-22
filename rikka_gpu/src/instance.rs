@@ -1,8 +1,11 @@
 use std::ffi::{c_void, CStr, CString};
 
 use anyhow::Result;
-use ash::{extensions::ext::DebugUtils, vk};
 use raw_window_handle::HasRawDisplayHandle;
+use rikka_core::{
+    ash::{self, extensions::ext::DebugUtils},
+    vk,
+};
 
 use crate::{physical_device::PhysicalDevice, surface::Surface};
 

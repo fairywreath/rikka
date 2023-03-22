@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Error, Result};
-use ash::vk::{self, Handle};
+
+use rikka_core::vk;
+pub use rikka_shader::types::DescriptorBinding;
 
 use crate::{buffer::Buffer, constants, device::Device, image::Image, types::ResourceUsageType};
 
@@ -76,30 +78,7 @@ impl Drop for DescriptorPool {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct DescriptorBinding {
-    pub descriptor_type: vk::DescriptorType,
-    pub index: u32,
-    pub count: u32,
-    pub shader_stage_flags: vk::ShaderStageFlags,
-}
-
-impl DescriptorBinding {
-    pub fn new(
-        descriptor_type: vk::DescriptorType,
-        index: u32,
-        count: u32,
-        shader_stage_flags: vk::ShaderStageFlags,
-    ) -> Self {
-        Self {
-            descriptor_type,
-            index,
-            count,
-            shader_stage_flags,
-        }
-    }
-}
-
+#[derive(Debug)]
 pub struct DescriptorSetLayoutDesc {
     pub bindings: Vec<DescriptorBinding>,
     pub bindless: bool,
@@ -441,7 +420,7 @@ impl DescriptorSet {
         let mut vulkan_write_descriptors =
             Vec::<vk::WriteDescriptorSet>::with_capacity(binding_resources.len());
 
-        // XXX: These arrays are not needed...
+        // Image/buffer descriptor write infos need to be valid when calling vkUpdateDescriptorSets
         let mut descriptor_buffer_infos = Vec::<vk::DescriptorBufferInfo>::new();
         let mut descriptor_image_infos = Vec::<vk::DescriptorImageInfo>::new();
 

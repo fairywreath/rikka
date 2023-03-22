@@ -5,11 +5,11 @@ use std::{
 };
 
 use anyhow::{Error, Result};
-use ash::vk;
 use gpu_allocator::{
     vulkan::{Allocation, AllocationCreateDesc, Allocator},
     MemoryLocation,
 };
+use rikka_core::{ash, vk};
 
 use crate::{
     command_buffer,

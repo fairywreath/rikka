@@ -2,6 +2,7 @@
 
 members = [
     "rikka",
+    "rikka_core",
     "rikka_gpu",
     "rikka_shader",
 ]

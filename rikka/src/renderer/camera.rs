@@ -1,8 +1,11 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use nalgebra::{Matrix4, Vector3};
-use nalgebra_glm as glm;
 use winit::{dpi::PhysicalPosition, event::*};
+
+use rikka_core::{
+    glm,
+    nalgebra::{Matrix4, Vector3},
+};
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const UP_VECTOR: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);

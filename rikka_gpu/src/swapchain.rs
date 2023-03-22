@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use ash::{extensions::khr, vk};
+use rikka_core::{ash::extensions::khr, vk};
 
 use crate::{
     device::Device, image::Image, instance::Instance, physical_device::PhysicalDevice,

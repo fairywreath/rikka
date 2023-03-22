@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ash::vk;
+use rikka_core::vk;
 
 use crate::{image::Image, sampler::Sampler};
 

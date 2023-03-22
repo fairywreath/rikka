@@ -1,4 +1,4 @@
-use nalgebra::Vector4;
+use rikka_core::nalgebra::Vector4;
 
 pub mod camera;
 pub mod gltf;

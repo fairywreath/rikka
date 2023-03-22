@@ -1,7 +1,10 @@
 use std::ffi::CStr;
 
 use anyhow::Result;
-use ash::vk::{self, QUEUE_FAMILY_EXTERNAL};
+use rikka_core::{
+    ash,
+    vk::{self, QUEUE_FAMILY_EXTERNAL},
+};
 
 use crate::{queue::QueueFamily, surface::Surface};
 

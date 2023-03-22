@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use ash::vk::{self, RenderingAttachmentInfo};
+use rikka_core::vk::{self, RenderingAttachmentInfo};
 
 use crate::{
     barriers::*,

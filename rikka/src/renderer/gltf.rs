@@ -7,11 +7,14 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use ddsfile::{Dds, DxgiFormat};
 use gltf::Gltf;
-use nalgebra::{Vector3, Vector4};
 
+use rikka_core::{
+    nalgebra::{Vector3, Vector4},
+    vk,
+};
 use rikka_gpu::{
-    self as gpu, ash::vk, buffer::*, constants::INVALID_BINDLESS_TEXTURE_INDEX, descriptor_set::*,
-    gpu::Gpu, image::*, sampler::*,
+    self as gpu, buffer::*, constants::INVALID_BINDLESS_TEXTURE_INDEX, descriptor_set::*, gpu::Gpu,
+    image::*, sampler::*,
 };
 
 use crate::renderer::MaterialData;

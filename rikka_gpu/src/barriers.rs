@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use ash::vk;
+use rikka_core::vk;
 
 use crate::{buffer::Buffer, device::Device, image::Image, queue::QueueType};
 

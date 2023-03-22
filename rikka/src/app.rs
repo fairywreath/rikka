@@ -1,10 +1,11 @@
 use std::sync::{Arc, Weak};
 
 use anyhow::{Context, Error, Result};
-use nalgebra::{Matrix4, Vector3, Vector4};
+use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
 
+use rikka_core::vk;
 use rikka_gpu::{
-    self as gpu, ash::vk, barriers::*, buffer::*, descriptor_set::*, gpu::*, image::*, pipeline::*,
+    self as gpu, barriers::*, buffer::*, descriptor_set::*, gpu::*, image::*, pipeline::*,
     sampler::*, shader_state::*, types::*,
 };
 

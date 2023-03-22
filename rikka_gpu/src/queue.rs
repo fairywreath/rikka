@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ash::vk;
+use rikka_core::vk;
 
 use crate::{
     command_buffer::CommandBuffer,

@@ -1,7 +1,7 @@
 use std::{any, ffi::CString, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
-use ash::vk;
+use rikka_core::{ash, vk};
 
 use crate::{
     command_buffer,

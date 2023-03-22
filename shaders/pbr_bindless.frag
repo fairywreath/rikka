@@ -30,7 +30,7 @@ layout(std140, binding = 4) uniform MaterialUniform
 #extension GL_EXT_nonuniform_qualifier : enable
 
 layout(set = 1, binding = 10) uniform sampler2D globalTextures[];
-// layout(set = 1, binding = 10) uniform sampler3D globalTextures3D[];
+layout(set = 1, binding = 10) uniform sampler3D globalTextures3D[];
 
 #define PI 3.1415926535897932384626433832795
 
@@ -46,7 +46,6 @@ float decode_srgb_component(float value)
     return result;
 }
 
-// Srgb gamma correction
 vec3 decode_srgb(vec3 color)
 {
     vec3 result = vec3(decode_srgb_component(color.r), decode_srgb_component(color.g), decode_srgb_component(color.b));
@@ -105,7 +104,7 @@ void main()
     float metalness = omr.b;
 
     vec4 base_color = diffuseTexture * baseColorFactor;
-    base_color.rgb = decode_srgb(base_color.rgb);
+    // base_color.rgb = decode_srgb(base_color.rgb);
 
     // Specular brdf
     float NdotH = dot(N, H);
@@ -134,7 +133,7 @@ void main()
     vec3 fresnel_mix = mix(diffuse_brdf, vec3(specular_brdf), fr);
 
     vec3 material_color = mix(fresnel_mix, conductor_fresnel, metalness);
-    material_color.rgb = encode_srgb(material_color.rgb);
 
+    // out_FragColor = vec4(encode_srgb(material_color), base_color.a);
     out_FragColor = vec4(material_color, base_color.a);
 }

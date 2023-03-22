@@ -1,7 +1,7 @@
 use std::{ffi::CString, sync::Arc};
 
 use anyhow::Result;
-use ash::vk;
+use rikka_core::{ash, vk};
 
 use crate::{
     instance::Instance,
