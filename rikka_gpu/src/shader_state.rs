@@ -1,7 +1,9 @@
 use std::{any, ffi::CString, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
+
 use rikka_core::{ash, vk};
+use rikka_shader::{compiler, reflect::*, types::*};
 
 use crate::{
     command_buffer,
@@ -10,8 +12,6 @@ use crate::{
     frame::{self, FrameThreadPoolsManager},
     types::*,
 };
-
-use rikka_shader::compiler as shader_compiler;
 
 pub use rikka_shader::types::ShaderStageType;
 
@@ -26,6 +26,7 @@ pub fn shader_stage_type_to_vk_flags(shader_type: ShaderStageType) -> vk::Shader
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum ShaderStageDataReadType {
     Bytes,
     BytesFromFile,
@@ -33,6 +34,7 @@ pub enum ShaderStageDataReadType {
     SourceFromFile,
 }
 
+#[derive(Clone, Debug)]
 pub struct ShaderStageDesc {
     // XXX: Make this private
     pub read_type: ShaderStageDataReadType,
@@ -54,6 +56,7 @@ impl ShaderStageDesc {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ShaderStateDesc {
     pub stages: Vec<ShaderStageDesc>,
 }
@@ -75,6 +78,8 @@ pub struct ShaderState {
 
     // XXX: Remove this hack and add entry point when creating the actual pipeline itself.
     entry_point_name: CString,
+
+    reflection: ShaderReflection,
 }
 
 impl ShaderState {
@@ -86,8 +91,12 @@ impl ShaderState {
         let mut raw_stages = Vec::<vk::PipelineShaderStageCreateInfo>::new();
         let entry_point_name = CString::new("main").unwrap();
 
+        let mut reflections = Vec::new();
+
         for stage in &desc.stages {
-            let shader_module = unsafe { Self::create_shader_module(device.as_ref(), stage)? };
+            let (shader_module, reflection) =
+                unsafe { Self::create_shader_module(device.as_ref(), stage)? };
+
             raw_stages.push(
                 vk::PipelineShaderStageCreateInfo::builder()
                     .stage(shader_stage_type_to_vk_flags(stage.shader_type))
@@ -95,12 +104,16 @@ impl ShaderState {
                     .name(&entry_point_name)
                     .build(),
             );
+            reflections.push(reflection);
         }
+
+        let reflection = merge_reflections(&reflections)?;
 
         Ok(Self {
             device,
             raw_stages,
             entry_point_name,
+            reflection,
         })
     }
 
@@ -112,16 +125,20 @@ impl ShaderState {
         self.raw_stages.len() as u32
     }
 
+    pub fn reflection(&self) -> &ShaderReflection {
+        &self.reflection
+    }
+
     unsafe fn create_shader_module(
         device: &Device,
         desc: &ShaderStageDesc,
-    ) -> Result<vk::ShaderModule> {
+    ) -> Result<(vk::ShaderModule, ShaderReflection)> {
         let bytes = {
             match desc.read_type {
                 ShaderStageDataReadType::SourceFromFile => {
                     let source_file_name = desc.file_name.as_ref().unwrap();
                     let destination_file_name = source_file_name.to_owned() + ".spv";
-                    let shader_data = shader_compiler::compile_shader_through_glslangvalidator_cli(
+                    let shader_data = compiler::compile_shader_through_glslangvalidator_cli(
                         source_file_name,
                         destination_file_name.as_str(),
                         desc.shader_type,
@@ -133,7 +150,7 @@ impl ShaderState {
                     todo!()
                 }
                 ShaderStageDataReadType::BytesFromFile => {
-                    let shader_data = shader_compiler::read_shader_binary_file(
+                    let shader_data = compiler::read_shader_binary_file(
                         desc.file_name.as_ref().unwrap().as_str(),
                     )?;
                     shader_data.bytes
@@ -142,13 +159,15 @@ impl ShaderState {
             }
         };
 
+        let reflection = reflect_spirv_data(&bytes)?;
+
         let mut cursor = std::io::Cursor::new(bytes);
         let code = ash::util::read_spv(&mut cursor)?;
 
         let create_info = vk::ShaderModuleCreateInfo::builder().code(&code);
         let shader_module = device.raw().create_shader_module(&create_info, None)?;
 
-        Ok(shader_module)
+        Ok((shader_module, reflection))
     }
 
     unsafe fn destroy_shader_modules(

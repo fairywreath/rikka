@@ -101,6 +101,11 @@ impl DescriptorSetLayoutDesc {
         self
     }
 
+    pub fn set_bindings(mut self, bindings: Vec<DescriptorBinding>) -> Self {
+        self.bindings = bindings;
+        self
+    }
+
     pub fn set_bindless(mut self, bindless: bool) -> Self {
         self.bindless = bindless;
         self
@@ -194,8 +199,6 @@ impl DescriptorSetLayout {
                         | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND;
                     vulkan_bindings.len()
                 ];
-
-                log::info!("Bindless vulkan bindings length {}", vulkan_bindings.len());
 
                 let mut binding_flags_info =
                     vk::DescriptorSetLayoutBindingFlagsCreateInfo::builder()

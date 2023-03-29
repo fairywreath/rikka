@@ -2,6 +2,7 @@ pub use rikka_shader;
 
 pub mod barriers;
 pub mod buffer;
+pub mod command_buffer;
 pub mod descriptor_set;
 pub mod gpu;
 pub mod image;
@@ -12,9 +13,9 @@ pub mod types;
 
 pub mod constants;
 
-mod command_buffer;
 mod device;
 mod frame;
+mod handle;
 mod instance;
 mod physical_device;
 mod query;

@@ -6,8 +6,10 @@ use rikka_core::vk::{self, Win32KeyedMutexAcquireReleaseInfoKHRBuilder};
 use crate::{
     command_buffer,
     constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
+    descriptor_set::*,
     device::Device,
     frame::{self, FrameThreadPoolsManager},
+    shader_state::{self, *},
     types::*,
 };
 
@@ -24,10 +26,11 @@ pub struct GraphicsPipelineDesc {
     pub vertex_const_size: Option<u32>,
     pub fragment_const_size: Option<u32>,
 
-    pub shader_stages: Vec<vk::PipelineShaderStageCreateInfo>,
+    // pub shader_stages: Vec<vk::PipelineShaderStageCreateInfo>,
+    pub shader_state: ShaderStateDesc,
 
     // XXX: Need a handle to the primary type `DescriptorSetLayout` here?
-    pub descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    // pub descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 
     // XXX: Handle to viewport state required?
     pub width: u32,
@@ -47,18 +50,25 @@ impl GraphicsPipelineDesc {
             rendering_state: RenderingState::new_dimensionless(),
             vertex_const_size: None,
             fragment_const_size: None,
-            shader_stages: vec![],
-            descriptor_set_layouts: vec![],
+            // shader_stages: vec![],
+            // descriptor_set_layouts: vec![],
             width: 1,
             height: 1,
+
+            shader_state: ShaderStateDesc::new(),
         }
     }
 
-    pub fn set_shader_stages(
-        mut self,
-        shader_stages: &[vk::PipelineShaderStageCreateInfo],
-    ) -> Self {
-        self.shader_stages = shader_stages.to_vec();
+    // pub fn set_shader_stages(
+    //     mut self,
+    //     shader_stages: &[vk::PipelineShaderStageCreateInfo],
+    // ) -> Self {
+    //     self.shader_stages = shader_stages.to_vec();
+    //     self
+    // }
+
+    pub fn set_shader_state(mut self, shader_state: ShaderStateDesc) -> Self {
+        self.shader_state = shader_state;
         self
     }
 
@@ -73,21 +83,21 @@ impl GraphicsPipelineDesc {
         self
     }
 
-    pub fn set_descriptor_set_layouts(
-        mut self,
-        descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
-    ) -> Self {
-        self.descriptor_set_layouts = descriptor_set_layouts;
-        self
-    }
+    // pub fn set_descriptor_set_layouts(
+    //     mut self,
+    //     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    // ) -> Self {
+    //     self.descriptor_set_layouts = descriptor_set_layouts;
+    //     self
+    // }
 
-    pub fn add_descriptor_set_layout(
-        mut self,
-        descriptor_set_layout: vk::DescriptorSetLayout,
-    ) -> Self {
-        self.descriptor_set_layouts.push(descriptor_set_layout);
-        self
-    }
+    // pub fn add_descriptor_set_layout(
+    //     mut self,
+    //     descriptor_set_layout: vk::DescriptorSetLayout,
+    // ) -> Self {
+    //     self.descriptor_set_layouts.push(descriptor_set_layout);
+    //     self
+    // }
 
     pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
         self.rasterization_state = rasterization_state;
@@ -104,14 +114,63 @@ pub struct GraphicsPipeline {
     raw: vk::Pipeline,
     raw_layout: vk::PipelineLayout,
     device: Arc<Device>,
+
     // XXX: Do we need this?
     desc: GraphicsPipelineDesc,
+
+    descriptor_set_layouts: Vec<Arc<DescriptorSetLayout>>,
 }
 
 impl GraphicsPipeline {
     pub fn new(device: Arc<Device>, desc: GraphicsPipelineDesc) -> Result<Self> {
-        // XXX: Create vulkan pipeline layout
-        // XXX: Read layout from cache?
+        // Create shader modules
+        let shader_state = ShaderState::new(device.clone(), desc.shader_state.clone())?;
+
+        // Create descriptor set layouts
+        let descriptor_sets = &shader_state.reflection().descriptor_sets;
+
+        let mut layout_descs = Vec::with_capacity(descriptor_sets.len());
+        for set in descriptor_sets {
+            // XXX: Make this bindless texture array check nicer
+            //      Need GPU class for this to work... use shared bindless texture layout for all pipelines
+            if set.bindings[0].index == constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX {
+                let bindless_descriptor_set_layout_desc = DescriptorSetLayoutDesc::new()
+                    .set_flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+                    .set_bindless(true)
+                    .add_binding(DescriptorBinding::new(
+                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                        constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX,
+                        constants::MAX_NUM_BINDLESS_RESOURCECS,
+                        vk::ShaderStageFlags::FRAGMENT,
+                    ))
+                    .add_binding(DescriptorBinding::new(
+                        vk::DescriptorType::STORAGE_IMAGE,
+                        constants::BINDLESS_SET_STORAGE_IMAGE_INDEX,
+                        constants::MAX_NUM_BINDLESS_RESOURCECS,
+                        vk::ShaderStageFlags::FRAGMENT,
+                    ));
+                layout_descs.push(bindless_descriptor_set_layout_desc);
+                continue;
+            }
+
+            let layout_desc = DescriptorSetLayoutDesc::new()
+                .set_bindings(set.bindings.clone())
+                .set_bindless(false)
+                .set_dynamic(false);
+            layout_descs.push(layout_desc);
+        }
+
+        let descriptor_set_layouts = layout_descs
+            .into_iter()
+            .map(|desc| Ok(Arc::new(DescriptorSetLayout::new(device.clone(), desc)?)))
+            .collect::<Result<Vec<_>>>()?;
+
+        let vulkan_descriptor_set_layouts = descriptor_set_layouts
+            .iter()
+            .map(|layout| layout.raw())
+            .collect::<Vec<_>>();
+
+        // XXX: Read layout from cache
 
         let push_constant_ranges = {
             let mut push_constant_ranges = Vec::<vk::PushConstantRange>::new();
@@ -138,7 +197,7 @@ impl GraphicsPipeline {
         };
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
-            .set_layouts(&desc.descriptor_set_layouts)
+            .set_layouts(&vulkan_descriptor_set_layouts)
             .push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {
@@ -298,7 +357,7 @@ impl GraphicsPipeline {
             .stencil_attachment_format(vk::Format::UNDEFINED);
 
         let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-            .stages(&desc.shader_stages)
+            .stages(&shader_state.vulkan_shader_stages())
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
             .viewport_state(&viewport_state)
@@ -327,6 +386,7 @@ impl GraphicsPipeline {
             raw_layout: pipeline_layout,
             desc,
             device,
+            descriptor_set_layouts,
         })
     }
 
@@ -341,6 +401,10 @@ impl GraphicsPipeline {
 
     pub fn raw_layout(&self) -> vk::PipelineLayout {
         self.raw_layout
+    }
+
+    pub fn descriptor_set_layouts(&self) -> &[Arc<DescriptorSetLayout>] {
+        &self.descriptor_set_layouts
     }
 }
 

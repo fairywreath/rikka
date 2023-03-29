@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{mem::swap, sync::Arc};
 
 use anyhow::{Context, Result};
 use rikka_core::{ash::extensions::khr, vk};
@@ -12,6 +12,9 @@ pub struct Swapchain {
     device: Arc<Device>,
     ash_swapchain: khr::Swapchain,
     vulkan_swapchain: vk::SwapchainKHR,
+
+    graphics_queue_family_index: u32,
+    present_queue_family_index: u32,
 
     format: vk::Format,
     extent: vk::Extent2D,
@@ -33,6 +36,8 @@ pub struct SwapchainDesc {
 
     pub graphics_queue_family_index: u32,
     pub present_queue_family_index: u32,
+
+    pub present_mode: vk::PresentModeKHR,
 }
 
 impl SwapchainDesc {
@@ -47,7 +52,13 @@ impl SwapchainDesc {
             height,
             graphics_queue_family_index,
             present_queue_family_index,
+            present_mode: vk::PresentModeKHR::FIFO,
         }
+    }
+
+    pub fn set_present_mode(mut self, present_mode: vk::PresentModeKHR) -> Self {
+        self.present_mode = present_mode;
+        self
     }
 }
 
@@ -91,10 +102,10 @@ impl Swapchain {
                 )?
             };
 
-            if present_modes.contains(&vk::PresentModeKHR::FIFO) {
-                vk::PresentModeKHR::FIFO
+            if present_modes.contains(&swapchain_desc.present_mode) {
+                swapchain_desc.present_mode
             } else {
-                vk::PresentModeKHR::FIFO
+                return Err(anyhow::anyhow!("Present mode not supported"));
             }
         };
 
@@ -169,6 +180,10 @@ impl Swapchain {
             device: device.clone(),
             ash_swapchain,
             vulkan_swapchain,
+
+            graphics_queue_family_index: swapchain_desc.graphics_queue_family_index,
+            present_queue_family_index: swapchain_desc.present_queue_family_index,
+
             format: surface_format.format,
             color_space: surface_format.color_space,
             present_mode,
@@ -225,6 +240,10 @@ impl Swapchain {
         Ok(result)
     }
 
+    pub fn set_present_mode(&mut self, present_mode: vk::PresentModeKHR) {
+        self.present_mode = present_mode;
+    }
+
     pub fn vulkan_image_index(&self) -> u32 {
         self.vulkan_image_index
     }
@@ -257,8 +276,55 @@ impl Swapchain {
         &self.device
     }
 
+    fn recreate_from_desc(
+        &mut self,
+        instance: &Instance,
+        surface: &Surface,
+        physical_device: &PhysicalDevice,
+        device: &Arc<Device>,
+        swapchain_desc: SwapchainDesc,
+    ) -> Result<Self> {
+        self.destroy();
+        Self::new(instance, surface, physical_device, device, swapchain_desc)
+    }
+
+    pub fn recreate_present_mode(
+        &mut self,
+        instance: &Instance,
+        surface: &Surface,
+        physical_device: &PhysicalDevice,
+        device: &Arc<Device>,
+        present_mode: vk::PresentModeKHR,
+    ) -> Result<Self> {
+        let desc = SwapchainDesc::new(
+            self.extent.width,
+            self.extent.height,
+            self.graphics_queue_family_index,
+            self.present_queue_family_index,
+        )
+        .set_present_mode(present_mode);
+        self.recreate_from_desc(instance, surface, physical_device, device, desc)
+    }
+
+    /// Recreates swapchain with extent information queried from the underlying window surface.
+    pub fn recreate(
+        &mut self,
+        instance: &Instance,
+        surface: &Surface,
+        physical_device: &PhysicalDevice,
+        device: &Arc<Device>,
+    ) -> Result<Self> {
+        let desc = SwapchainDesc::new(
+            u32::MAX,
+            u32::MIN,
+            self.graphics_queue_family_index,
+            self.present_queue_family_index,
+        )
+        .set_present_mode(self.present_mode);
+        self.recreate_from_desc(instance, surface, physical_device, device, desc)
+    }
+
     pub fn destroy(&mut self) {
-        // XXX: Handle recreation more gracefully
         if !self.image_views.is_empty() {
             unsafe {
                 for image_view in self.image_views.drain(..) {
@@ -271,7 +337,6 @@ impl Swapchain {
         }
     }
 
-    // XXX: Do not depend on self here
     fn init_images(&mut self) -> Result<()> {
         let images = unsafe {
             self.ash_swapchain

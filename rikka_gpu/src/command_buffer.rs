@@ -222,6 +222,9 @@ impl CommandBufferManager {
         Ok(())
     }
 
+    // XXX: Do not use Arc to pass around CommandBuffers, return a lightweight structure that queues the command buffer to a submission pool automatically upon destruction?
+    //      Have some kind of Guard<CommandBufferManager> for resource safety
+    // XXX: Use some kind of RAII guard object
     pub fn command_buffer(
         &mut self,
         frame_index: u32,
@@ -612,8 +615,7 @@ impl CommandBuffer {
 
         staging_buffer.copy_data_to_buffer(data)?;
 
-        let mut barriers = Barriers::new();
-        barriers.add_image(
+        let barriers = Barriers::new().add_image(
             image,
             ResourceState::UNDEFINED,
             ResourceState::COPY_DESTINATION,
@@ -624,8 +626,7 @@ impl CommandBuffer {
 
         // XXX: Cannot transition to SHADER_RESROUCE state if transfer queue is used.
         //      Need to use another different command buffer in this case...
-        let mut barriers = Barriers::new();
-        barriers.add_image(
+        let barriers = Barriers::new().add_image(
             image,
             ResourceState::COPY_DESTINATION,
             ResourceState::SHADER_RESOURCE,

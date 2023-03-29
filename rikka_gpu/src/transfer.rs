@@ -1,7 +1,7 @@
 use std::{
     mem::{align_of, size_of_val, swap},
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use anyhow::{Context, Error, Result};
@@ -22,4 +22,9 @@ use crate::{
     types::*,
 };
 
-pub struct TransferManager {}
+pub struct TransferManager {
+    device: Arc<Device>,
+    queue: Queue,
+    command_pools: Vec<CommandPool>,
+    command_buffers: Vec<CommandBuffer>,
+}

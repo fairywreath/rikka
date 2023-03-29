@@ -84,6 +84,7 @@ impl ReflectInto<vk::DescriptorType> for ReflectDescriptorType {
     }
 }
 
+// XXX: Make this impl of ShaderReflection
 pub fn reflect_spirv_data(spirv_data: &[u8]) -> Result<ShaderReflection> {
     if let Ok(ref mut module) = ShaderModule::load_u8_data(spirv_data) {
         let shader_stages = convert_shader_stage(module.get_shader_stage());
@@ -96,10 +97,12 @@ pub fn reflect_spirv_data(spirv_data: &[u8]) -> Result<ShaderReflection> {
                     .bindings
                     .into_iter()
                     .map(|binding| {
+                        // XXX: Need to inspect per descriptor type/per array
                         Ok(DescriptorBinding {
                             descriptor_type: binding.descriptor_type.reflect_into()?,
                             index: binding.binding,
-                            count: binding.count,
+                            // count: binding.count,
+                            count: 1,
                             shader_stage_flags: shader_stages,
                         })
                     })

@@ -1,15 +1,209 @@
+use std::sync::Arc;
+
 use anyhow::Result;
+use crossbeam_channel::{Receiver, Sender};
 
-use rikka_gpu::{self as gpu, buffer::*, descriptor_set::*, image::*, pipeline::*, sampler::*};
+use rikka_core::vk;
+use rikka_gpu::{
+    buffer::*, command_buffer::*, descriptor_set::*, gpu::Gpu, image::*, pipeline::*, sampler::*,
+};
 
-pub struct MaterialDesc {}
+pub struct RenderTechniqueDesc {
+    graphics_pipelines: Vec<GraphicsPipelineDesc>,
+}
 
-pub struct Material {}
+impl RenderTechniqueDesc {
+    pub fn new() -> Self {
+        RenderTechniqueDesc {
+            graphics_pipelines: Vec::new(),
+        }
+    }
 
-pub struct Renderer {}
+    pub fn add_graphics_pipeline(mut self, graphics_pipeline: GraphicsPipelineDesc) -> Self {
+        self.graphics_pipelines.push(graphics_pipeline);
+        self
+    }
+}
+
+pub struct RenderPass {
+    // XXX: Remove `pub` here
+    pub graphics_pipeline: Arc<GraphicsPipeline>,
+}
+
+pub struct RenderTechnique {
+    // XXX: Remove `pub` here
+    pub passes: Vec<RenderPass>,
+}
+
+pub struct MaterialDesc {
+    render_index: u32,
+    render_technique: Arc<RenderTechnique>,
+}
+
+impl MaterialDesc {
+    pub fn new(render_index: u32, render_technique: Arc<RenderTechnique>) -> Self {
+        MaterialDesc {
+            render_index,
+            render_technique,
+        }
+    }
+}
+
+pub struct Material {
+    render_index: u32,
+    render_technique: Arc<RenderTechnique>,
+}
+
+pub struct Renderer {
+    gpu: Gpu,
+
+    image_update_receiver: Receiver<Arc<Image>>,
+    image_update_sender: Sender<Arc<Image>>,
+    images_to_update: Vec<Arc<Image>>,
+}
 
 impl Renderer {
-    pub fn create_buffer(desc: BufferDesc) -> Result<Buffer> {
+    pub fn new(gpu: Gpu) -> Self {
+        let (image_update_sender, image_update_receiver) = crossbeam_channel::unbounded();
+        Renderer {
+            gpu,
+            image_update_sender,
+            image_update_receiver,
+            images_to_update: Vec::new(),
+        }
+    }
+
+    // XXX: Remove these eventually
+    pub fn gpu(&self) -> &Gpu {
+        &self.gpu
+    }
+    pub fn gpu_mut(&mut self) -> &mut Gpu {
+        &mut self.gpu
+    }
+
+    pub fn begin_frame(&mut self) -> Result<()> {
+        // XXX: Handle swapchain recreation
+        self.gpu.new_frame()?;
+        self.gpu.swapchain_acquire_next_image()?;
+        Ok(())
+    }
+
+    pub fn end_frame(&mut self) -> Result<()> {
+        // XXX: Handle swapchain recreation
+        // XXX: Submit queued command buffers
+        self.gpu.submit_queued_graphics_command_buffers()?;
+        self.gpu.present()?;
+        Ok(())
+    }
+
+    pub fn set_present_mode(&mut self, present_mode: vk::PresentModeKHR) -> Result<()> {
+        self.gpu.set_present_mode(present_mode)
+    }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        let swapchain_extent = self.gpu.swapchain_extent();
+        swapchain_extent.width as f32 / swapchain_extent.height as f32
+    }
+
+    pub fn extent(&self) -> vk::Extent2D {
+        self.gpu.swapchain_extent()
+    }
+
+    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Arc<Buffer>> {
+        let buffer = self.gpu.create_buffer(desc)?;
+        Ok(Arc::new(buffer))
+    }
+
+    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Arc<Image>> {
+        let image = self.gpu.create_image(desc)?;
+        Ok(Arc::new(image))
+    }
+
+    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Arc<Sampler>> {
+        let sampler = self.gpu.create_sampler(desc)?;
+        Ok(Arc::new(sampler))
+    }
+
+    pub fn create_technique(&self, desc: RenderTechniqueDesc) -> Result<Arc<RenderTechnique>> {
+        let graphics_pipelines = desc
+            .graphics_pipelines
+            .into_iter()
+            .map(|graphics_pipeline_desc| {
+                let graphics_pipeline =
+                    self.gpu.create_graphics_pipeline(graphics_pipeline_desc)?;
+                Ok(Arc::new(graphics_pipeline))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let passes = graphics_pipelines
+            .into_iter()
+            .map(|graphics_pipeline| RenderPass { graphics_pipeline })
+            .collect::<Vec<_>>();
+
+        Ok(Arc::new(RenderTechnique { passes }))
+    }
+
+    pub fn create_material(&self, desc: MaterialDesc) -> Result<Arc<Material>> {
+        Ok(Arc::new(Material {
+            render_index: desc.render_index,
+            render_technique: desc.render_technique,
+        }))
+    }
+
+    pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Arc<GraphicsPipeline> {
+        material.render_technique.passes[pass_index as usize]
+            .graphics_pipeline
+            .clone()
+    }
+
+    pub fn create_descriptor_set(
+        &self,
+        material: &Material,
+        desc: DescriptorSetDesc,
+    ) -> Result<Arc<DescriptorSet>> {
         todo!()
+    }
+
+    pub fn command_buffer(&mut self, thread_index: u32) -> Result<Arc<CommandBuffer>> {
+        self.gpu.current_command_buffer(thread_index)
+    }
+
+    pub fn queue_command_buffer(&mut self, command_buffer: Arc<CommandBuffer>) {
+        self.gpu.queue_graphics_command_buffer(command_buffer);
+    }
+
+    pub fn image_update_sender(&self) -> Sender<Arc<Image>> {
+        Sender::clone(&self.image_update_sender)
+    }
+
+    /// Manually add image to update. This should ideally be done elsewhere through the sender
+    pub fn add_image_update(&mut self, image: Arc<Image>) {
+        self.images_to_update.push(image);
+    }
+
+    pub fn add_image_update_commands(&mut self, thread_index: u32) -> Result<()> {
+        while !self.image_update_receiver.is_empty() {
+            self.images_to_update
+                .push(self.image_update_receiver.recv()?);
+        }
+
+        // XXX: Transition barriers
+
+        Ok(())
+    }
+
+    /// XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
+    ///      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
+    ///      object destruction until the end of the current frame
+    ///
+    ///      Currently we just wait idle before dropping any resources but this needs to be removed
+    pub fn wait_idle(&self) {
+        self.gpu.wait_idle();
+    }
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        self.gpu.wait_idle();
     }
 }

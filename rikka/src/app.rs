@@ -1,6 +1,8 @@
 use std::sync::{Arc, Weak};
 
 use anyhow::{Context, Error, Result};
+use rayon::*;
+
 use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
 
 use rikka_core::vk;
@@ -9,17 +11,13 @@ use rikka_gpu::{
     sampler::*, shader_state::*, types::*,
 };
 
-use crate::renderer::{camera::*, gltf::*, *};
+use crate::renderer::{gltf::*, renderer::*};
 
 pub struct RikkaApp {
     uniform_buffer: Arc<Buffer>,
 
     zero_buffer: Arc<Buffer>,
 
-    vertex_buffer: Arc<Buffer>,
-
-    descriptor_set_layout: Arc<DescriptorSetLayout>,
-    descriptor_set: DescriptorSet,
     graphics_pipeline: GraphicsPipeline,
 
     uniform_data: UniformData,
@@ -29,7 +27,8 @@ pub struct RikkaApp {
     depth_image: Arc<Image>,
 
     // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
-    gpu: Gpu,
+    // gpu: Gpu,
+    renderer: Renderer,
 }
 
 #[derive(Copy, Clone)]
@@ -45,25 +44,9 @@ struct UniformData {
 
 impl RikkaApp {
     pub fn new(gpu_desc: GpuDesc, gltf_file_name: &str) -> Result<Self> {
-        let mut gpu = Gpu::new(gpu_desc).context("Error creating Gpu!")?;
+        let mut renderer = Renderer::new(Gpu::new(gpu_desc)?);
 
-        let vertices = cube_vertices();
-        let buffer_size = std::mem::size_of_val(&vertices);
-
-        let vertex_buffer = gpu.create_buffer(
-            BufferDesc::new()
-                .set_size(buffer_size as u32)
-                .set_usage_flags(vk::BufferUsageFlags::VERTEX_BUFFER)
-                .set_device_only(false),
-        )?;
-        vertex_buffer.copy_data_to_buffer(&vertices)?;
-        let vertex_buffer = Arc::new(vertex_buffer);
-
-        // let model = Matrix4::new_rotation(Vector3::new(0.0, std::f32::consts::FRAC_PI_4, 0.0))
-        // *Matrix4::new_scaling(0.008);
         let model = Matrix4::new_scaling(0.004);
-        // let model = Matrix4::new_scaling(1.0);
-
         let uniform_data = UniformData {
             model,
             view: Matrix4::identity(),
@@ -72,79 +55,44 @@ impl RikkaApp {
             eye: Vector4::new(1.0, 1.0, 1.0, 1.0),
             light: Vector4::new(-1.5, 2.5, -0.5, 1.0),
         };
-        let uniform_buffer = gpu.create_buffer(
+
+        let uniform_buffer = renderer.create_buffer(
             BufferDesc::new()
                 .set_size(std::mem::size_of::<UniformData>() as _)
                 .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER)
                 .set_device_only(false),
         )?;
-        let uniform_buffer = Arc::new(uniform_buffer);
 
         let zero_buffer_data = Vector4::<f32>::new(0.0, 0.0, 0.0, 0.0);
-        let zero_buffer = gpu.create_buffer(
+        let zero_buffer = renderer.create_buffer(
             BufferDesc::new()
                 .set_size(std::mem::size_of_val(zero_buffer_data.as_slice()) as _)
                 .set_usage_flags(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .set_device_only(false),
         )?;
         zero_buffer.copy_data_to_buffer(zero_buffer_data.as_slice())?;
-        let zero_buffer = Arc::new(zero_buffer);
 
-        let depth_image_desc = ImageDesc::new(
-            gpu.swapchain().extent().width,
-            gpu.swapchain().extent().height,
-            1,
-        )
-        .set_format(vk::Format::D32_SFLOAT)
-        .set_usage_flags(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
-        let depth_image = Arc::new(gpu.create_image(depth_image_desc)?);
-        gpu.transition_image_layout(
-            &depth_image,
+        let depth_image_desc = ImageDesc::new(renderer.extent().width, renderer.extent().height, 1)
+            .set_format(vk::Format::D32_SFLOAT)
+            .set_usage_flags(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
+        let depth_image = renderer.create_image(depth_image_desc)?;
+
+        renderer.gpu().transition_image_layout(
+            depth_image.as_ref(),
             ResourceState::UNDEFINED,
             ResourceState::DEPTH_WRITE,
         )?;
 
-        let descriptor_set_layout = gpu
-            .create_descriptor_set_layout(
-                DescriptorSetLayoutDesc::new()
-                    .add_binding(DescriptorBinding::new(
-                        vk::DescriptorType::UNIFORM_BUFFER,
-                        0,
-                        1,
-                        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                    ))
-                    .add_binding(DescriptorBinding::new(
-                        vk::DescriptorType::UNIFORM_BUFFER,
-                        4,
-                        1,
-                        vk::ShaderStageFlags::FRAGMENT,
-                    )),
-            )
-            .unwrap();
-        let descriptor_set_layout = Arc::new(descriptor_set_layout);
-
-        let binding_resources = vec![DescriptorSetBindingResource::buffer(
-            uniform_buffer.clone(),
-            0,
-        )];
-
-        let descriptor_set = gpu.create_descriptor_set(
-            DescriptorSetDesc::new(descriptor_set_layout.clone())
-                .set_binding_resources(binding_resources),
-        )?;
-
         let graphics_pipeline = {
-            let shader_state = gpu.create_shader_state(
-                ShaderStateDesc::new()
-                    .add_stage(ShaderStageDesc::new_from_source_file(
-                        "shaders/simple_pbr.vert",
-                        ShaderStageType::Vertex,
-                    ))
-                    .add_stage(ShaderStageDesc::new_from_source_file(
-                        "shaders/simple_pbr.frag",
-                        ShaderStageType::Fragment,
-                    )),
-            )?;
+            let shader_state_desc = ShaderStateDesc::new()
+                .add_stage(ShaderStageDesc::new_from_source_file(
+                    "shaders/simple_pbr.vert",
+                    ShaderStageType::Vertex,
+                ))
+                .add_stage(ShaderStageDesc::new_from_source_file(
+                    "shaders/simple_pbr.frag",
+                    ShaderStageType::Fragment,
+                ));
 
             let vertex_input_state = VertexInputState::new()
                 // Position
@@ -160,25 +108,24 @@ impl RikkaApp {
                 .add_vertex_attribute(3, 3, 0, vk::Format::R32G32B32A32_SFLOAT)
                 .add_vertex_stream(3, 16, vk::VertexInputRate::VERTEX);
 
-            gpu.create_graphics_pipeline(
+            renderer.gpu().create_graphics_pipeline(
                 GraphicsPipelineDesc::new()
-                    .set_shader_stages(shader_state.vulkan_shader_stages())
-                    .set_extent(
-                        gpu.swapchain().extent().width,
-                        gpu.swapchain().extent().height,
-                    )
+                    // .set_shader_stages(shader_state.vulkan_shader_stages())
+                    .set_shader_state(shader_state_desc)
+                    .set_extent(renderer.extent().width, renderer.extent().height)
                     .set_rendering_state(
                         RenderingState::new_dimensionless()
                             .add_color_attachment(
-                                RenderColorAttachment::new().set_format(gpu.swapchain().format()),
+                                RenderColorAttachment::new()
+                                    .set_format(renderer.gpu().swapchain().format()),
                             )
                             .set_depth_attachment(
                                 RenderDepthStencilAttachment::new()
                                     .set_format(vk::Format::D32_SFLOAT),
                             ),
                     )
-                    .add_descriptor_set_layout(descriptor_set_layout.raw())
-                    .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
+                    // .add_descriptor_set_layout(descriptor_set_layout.raw())
+                    // .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
                     .set_vertex_input_state(vertex_input_state)
                     .set_rasterization_state(
                         RasterizationState::new()
@@ -189,23 +136,21 @@ impl RikkaApp {
         };
 
         let gltf_scene = GltfScene::from_file(
-            &mut gpu,
+            &mut renderer.gpu_mut(),
             gltf_file_name,
             &uniform_buffer,
-            &descriptor_set_layout,
+            &graphics_pipeline.descriptor_set_layouts()[0],
         )?;
 
-        Ok(Self {
-            gpu,
+        // let thread_pool = ThreadPoolBuilder::new().num_threads(3).build()?;
 
-            descriptor_set_layout,
-            descriptor_set,
+        Ok(Self {
+            renderer,
+
             graphics_pipeline,
 
             uniform_buffer,
             uniform_data,
-
-            vertex_buffer,
 
             gltf_scene,
 
@@ -215,152 +160,116 @@ impl RikkaApp {
     }
 
     pub fn render(&mut self) -> Result<()> {
-        self.gpu.new_frame().unwrap();
+        self.renderer.begin_frame()?;
 
         // Update camera uniforms
         self.uniform_buffer
             .copy_data_to_buffer(std::slice::from_ref(&self.uniform_data))?;
 
-        // log::debug!("Current camere eye position {:?}", self.uniform_data.eye);
+        let command_buffer = self.renderer.command_buffer(0)?;
 
-        let acquire_result = self.gpu.swapchain_acquire_next_image();
+        let swapchain = self.renderer.gpu().swapchain();
 
-        match acquire_result {
-            Ok(_) => {
-                let command_buffer = self.gpu.current_command_buffer(0).unwrap();
+        {
+            command_buffer.begin()?;
 
-                let swapchain = self.gpu.swapchain();
+            let barriers = Barriers::new().add_image(
+                swapchain.current_image_handle().as_ref(),
+                ResourceState::UNDEFINED,
+                ResourceState::RENDER_TARGET,
+            );
+            command_buffer.pipeline_barrier(barriers);
 
-                {
-                    command_buffer.begin()?;
+            let color_attachment = RenderColorAttachment::new()
+                .set_clear_value(vk::ClearColorValue {
+                    float32: [1.0, 1.0, 1.0, 1.0],
+                })
+                .set_operation(RenderPassOperation::Clear)
+                .set_image_view(swapchain.current_image_view())
+                .set_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-                    let mut barriers = Barriers::new();
-                    barriers.add_image(
-                        swapchain.current_image_handle().as_ref(),
-                        ResourceState::UNDEFINED,
-                        ResourceState::RENDER_TARGET,
-                    );
-                    command_buffer.pipeline_barrier(barriers);
+            let depth_attachment = RenderDepthStencilAttachment::new()
+                .set_clear_value(vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                })
+                .set_depth_operation(RenderPassOperation::Clear)
+                .set_image_view(self.depth_image.raw_view());
 
-                    let color_attachment = RenderColorAttachment::new()
-                        .set_clear_value(vk::ClearColorValue {
-                            float32: [1.0, 1.0, 1.0, 1.0],
-                        })
-                        .set_operation(RenderPassOperation::Clear)
-                        .set_image_view(swapchain.current_image_view())
-                        .set_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            let rendering_state =
+                RenderingState::new(swapchain.extent().width, swapchain.extent().height)
+                    .set_depth_attachment(depth_attachment)
+                    .add_color_attachment(color_attachment);
+            command_buffer.begin_rendering(rendering_state);
 
-                    let depth_attachment = RenderDepthStencilAttachment::new()
-                        .set_clear_value(vk::ClearDepthStencilValue {
-                            depth: 1.0,
-                            stencil: 0,
-                        })
-                        .set_depth_operation(RenderPassOperation::Clear)
-                        .set_image_view(self.depth_image.raw_view());
+            command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
 
-                    let rendering_state =
-                        RenderingState::new(swapchain.extent().width, swapchain.extent().height)
-                            .set_depth_attachment(depth_attachment)
-                            .add_color_attachment(color_attachment);
-                    command_buffer.begin_rendering(rendering_state);
-
-                    command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
-
-                    for mesh_draw in &self.gltf_scene.mesh_draws {
-                        if mesh_draw.textures_incomplete {
-                            continue;
-                        }
-
-                        command_buffer.bind_vertex_buffer(
-                            mesh_draw.position_buffer.as_ref().unwrap(),
-                            0,
-                            mesh_draw.position_offset as _,
-                        );
-                        command_buffer.bind_vertex_buffer(
-                            mesh_draw.tex_coords_buffer.as_ref().unwrap(),
-                            1,
-                            mesh_draw.tex_coords_offset as _,
-                        );
-                        command_buffer.bind_vertex_buffer(
-                            mesh_draw.normal_buffer.as_ref().unwrap(),
-                            2,
-                            mesh_draw.normal_offset as _,
-                        );
-
-                        if let Some(tangent_buffer) = &mesh_draw.tangent_buffer {
-                            command_buffer.bind_vertex_buffer(
-                                tangent_buffer.as_ref(),
-                                3,
-                                mesh_draw.tangent_offset as _,
-                            );
-                        } else {
-                            command_buffer.bind_vertex_buffer(self.zero_buffer.as_ref(), 3, 0);
-                        }
-
-                        command_buffer.bind_index_buffer(
-                            mesh_draw.index_buffer.as_ref().unwrap(),
-                            mesh_draw.index_offset as _,
-                        );
-
-                        command_buffer.bind_descriptor_set(
-                            mesh_draw.descriptor_set.as_ref().unwrap(),
-                            self.graphics_pipeline.raw_layout(),
-                            0,
-                        );
-
-                        // XXX: Bind this automatically in the GPU layer
-                        command_buffer.bind_descriptor_set(
-                            self.gpu.bindless_descriptor_set().as_ref(),
-                            self.graphics_pipeline.raw_layout(),
-                            1,
-                        );
-
-                        command_buffer.draw_indexed(mesh_draw.count, 1, 0, 0, 0);
-                    }
-
-                    command_buffer.end_rendering();
-
-                    let mut barriers = Barriers::new();
-                    barriers.add_image(
-                        swapchain.current_image_handle().as_ref(),
-                        ResourceState::RENDER_TARGET,
-                        ResourceState::PRESENT,
-                    );
-                    command_buffer.pipeline_barrier(barriers);
-
-                    command_buffer.end()?;
+            for mesh_draw in &self.gltf_scene.mesh_draws {
+                if mesh_draw.textures_incomplete {
+                    continue;
                 }
 
-                self.gpu
-                    .submit_graphics_command_buffer(command_buffer.as_ref())?;
+                command_buffer.bind_vertex_buffer(
+                    mesh_draw.position_buffer.as_ref().unwrap(),
+                    0,
+                    mesh_draw.position_offset as _,
+                );
+                command_buffer.bind_vertex_buffer(
+                    mesh_draw.tex_coords_buffer.as_ref().unwrap(),
+                    1,
+                    mesh_draw.tex_coords_offset as _,
+                );
+                command_buffer.bind_vertex_buffer(
+                    mesh_draw.normal_buffer.as_ref().unwrap(),
+                    2,
+                    mesh_draw.normal_offset as _,
+                );
 
-                // XXX: So we don't panic when we need to recreate swapchain...
-                //      Need to wait for all command pools to complete before reset if need to recreate swapchain
-                let present_result = self.gpu.present();
-
-                match present_result {
-                    // XXX: gpu.new_frame will reset command pools, hence on a failed presentation
-                    //      we need to wait on the submitted command buffers before presenting.
-                    //      There has to be a better way of handling this? Right now we do not
-                    //      advance the frame counters on failed presentation(since we would need to wait on the
-                    //      next set of semaphores if we did, and those cannot be signaled). Maybe we manually
-                    //      signal these when present failes and wait on the current submitted command buffers inside
-                    //      present() as well
-                    Err(_) => {
-                        log::debug!("Swapchain presentation failed, waiting for command buffer(s) submitted in the current frame to finish");
-                        self.gpu.wait_idle();
-                    }
-                    _ => {}
+                if let Some(tangent_buffer) = &mesh_draw.tangent_buffer {
+                    command_buffer.bind_vertex_buffer(
+                        tangent_buffer.as_ref(),
+                        3,
+                        mesh_draw.tangent_offset as _,
+                    );
+                } else {
+                    command_buffer.bind_vertex_buffer(self.zero_buffer.as_ref(), 3, 0);
                 }
+
+                command_buffer.bind_index_buffer(
+                    mesh_draw.index_buffer.as_ref().unwrap(),
+                    mesh_draw.index_offset as _,
+                );
+
+                command_buffer.bind_descriptor_set(
+                    mesh_draw.descriptor_set.as_ref().unwrap(),
+                    self.graphics_pipeline.raw_layout(),
+                    0,
+                );
+
+                // XXX: Bind this automatically in the GPU layer
+                command_buffer.bind_descriptor_set(
+                    self.renderer.gpu().bindless_descriptor_set().as_ref(),
+                    self.graphics_pipeline.raw_layout(),
+                    1,
+                );
+
+                command_buffer.draw_indexed(mesh_draw.count, 1, 0, 0, 0);
             }
-            Err(_) => {
-                log::trace!("Recreating swapchain...");
-                self.gpu
-                    .recreate_swapchain()
-                    .expect("Failed to recreate swapchain!");
-                self.gpu.advance_frame_counters();
-            }
+
+            command_buffer.end_rendering();
+
+            let barriers = Barriers::new().add_image(
+                swapchain.current_image_handle().as_ref(),
+                ResourceState::RENDER_TARGET,
+                ResourceState::PRESENT,
+            );
+            command_buffer.pipeline_barrier(barriers);
+
+            command_buffer.end()?;
         }
+
+        self.renderer.queue_command_buffer(command_buffer);
+        self.renderer.end_frame()?;
 
         Ok(())
     }
@@ -381,9 +290,11 @@ impl RikkaApp {
 
 impl Drop for RikkaApp {
     fn drop(&mut self) {
-        // XXX: Ideally we should send dropped resources back to the GPU and transfer ownership, where
-        //      the GPU will destroy them when deemed safe. This is a hack to make sure all operation are completed
-        //      before dropping the app's gpu resources
-        self.gpu.wait_idle();
+        // XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
+        //      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
+        //      object destruction until the end of the current frame
+        //
+        //      Currently we just wait idle before dropping any resources but this needs to be removed
+        self.renderer.wait_idle();
     }
 }

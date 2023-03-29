@@ -1,7 +1,10 @@
-use rikka_core::nalgebra::Vector4;
+use bitflags::bitflags;
+
+use rikka_core::nalgebra::{Matrix4, Vector4};
 
 pub mod camera;
 pub mod gltf;
+pub mod loader;
 pub mod renderer;
 
 #[derive(Clone, Copy)]
@@ -21,115 +24,24 @@ pub struct Vertex {
     // pub tex_coords: [f32; 2],
 }
 
-pub fn cube_vertices() -> [Vertex; 36] {
-    [
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        }, // triangle 1 : begin
-        Vertex {
-            positions: [-1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, 1.0],
-        }, // triangle 1 : end
-        Vertex {
-            positions: [1.0, 1.0, -1.0],
-        }, // triangle 2 : begin
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, -1.0],
-        }, // triangle 2 : end
-        Vertex {
-            positions: [1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, -1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [-1.0, 1.0, 1.0],
-        },
-        Vertex {
-            positions: [1.0, -1.0, 1.0],
-        },
-    ]
+bitflags! {
+    pub struct DrawFlags : u32 {
+        const ALPHA_MASK = 0x1;
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct MeshData {
+    pub model: Matrix4<f32>,
+    pub inverse_model: Matrix4<f32>,
+
+    pub texture_indices: [u32; 4],
+    pub base_color_factor: Vector4<f32>,
+    pub omr_factor: Vector4<f32>,
+    pub alpha_cutoff: f32,
+
+    padding: [f32; 3],
+
+    pub flags: u32,
 }

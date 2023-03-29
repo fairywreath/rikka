@@ -31,6 +31,20 @@ pub struct MeshDraw {
 
     pub material_buffer: Option<BufferHandle>,
     pub material_data: MaterialData,
+
+    // Material data
+    pub diffuse_texture: u32,
+    pub omr_texture: u32,
+    pub normal_texture: u32,
+
+    pub base_color_factor: Vector4<f32>,
+    pub omr_factor: Vector4<f32>,
+    pub scale: Vector3<f32>,
+
+    pub alpha_cutoff: f32,
+    pub flags: u32,
+
+    // XXX: Remove this
     pub textures_incomplete: bool,
 
     pub position_offset: u32,
@@ -41,7 +55,7 @@ pub struct MeshDraw {
     pub tangent_offset: u32,
 
     // XXX: Have a descriptor cache system(ideally inside rikka_gpu)
-    pub descriptor_set: Option<DescriptorSet>,
+    pub descriptor_set: Option<Arc<DescriptorSet>>,
 }
 
 impl Default for MeshDraw {
@@ -70,6 +84,17 @@ impl Default for MeshDraw {
 
             descriptor_set: None,
             textures_incomplete: false,
+
+            diffuse_texture: 0,
+            omr_texture: 0,
+            normal_texture: 0,
+
+            base_color_factor: Vector4::default(),
+            omr_factor: Vector4::default(),
+            scale: Vector3::default(),
+
+            alpha_cutoff: 0.0,
+            flags: 0,
         }
     }
 }
@@ -462,12 +487,12 @@ impl GltfScene {
                     ),
                 ];
 
-                mesh_draw.descriptor_set = Some(
+                mesh_draw.descriptor_set = Some(Arc::new(
                     gpu.create_descriptor_set(
                         DescriptorSetDesc::new(descriptor_set_layout.clone())
                             .set_binding_resources(binding_resources),
                     )?,
-                );
+                ));
 
                 mesh_draws.push(mesh_draw);
             }

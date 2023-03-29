@@ -225,8 +225,12 @@ impl Barriers {
         }
     }
 
-    // XXX: Make this accept self and return self
-    pub fn add_image(&mut self, image: &Image, old_state: ResourceState, new_state: ResourceState) {
+    pub fn add_image(
+        mut self,
+        image: &Image,
+        old_state: ResourceState,
+        new_state: ResourceState,
+    ) -> Self {
         self.add_image_from_vulkan_parameters(
             old_state.into(),
             determine_pipeline_flags_from_access_flags(old_state.into(), QueueType::Graphics),
@@ -236,10 +240,12 @@ impl Barriers {
             new_state.into(),
             image.raw(),
             image.subresource_range(),
-        )
+        );
+
+        self
     }
 
-    pub fn add_image_from_vulkan_parameters(
+    fn add_image_from_vulkan_parameters(
         &mut self,
         src_access_mask: vk::AccessFlags2,
         src_stage_mask: vk::PipelineStageFlags2,

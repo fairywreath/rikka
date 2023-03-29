@@ -53,6 +53,8 @@ pub struct Gpu {
 
     swapchain: Swapchain,
 
+    queued_command_buffers: Vec<Arc<CommandBuffer>>,
+
     command_buffer_manager: CommandBufferManager,
     frame_thread_pools_manager: FrameThreadPoolsManager,
     frame_synchronization_manager: FrameSynchronizationManager,
@@ -152,7 +154,7 @@ impl Gpu {
         let frame_thread_pools_manager = FrameThreadPoolsManager::new(
             device.clone(),
             FrameThreadPoolsDesc {
-                num_threads: 1,
+                num_threads: 3,
                 num_frames: constants::MAX_FRAMES,
                 time_queries_per_frame: 32,
                 graphics_queue_family_index: graphics_queue.family_index(),
@@ -281,6 +283,7 @@ impl Gpu {
             allocator,
             swapchain,
 
+            queued_command_buffers: Vec::new(),
             command_buffer_manager,
             frame_thread_pools_manager,
             frame_synchronization_manager,
@@ -362,6 +365,22 @@ impl Gpu {
         Ok(())
     }
 
+    pub fn queue_graphics_command_buffer(&mut self, command_buffer: Arc<CommandBuffer>) {
+        self.queued_command_buffers.push(command_buffer);
+    }
+
+    pub fn submit_queued_graphics_command_buffers(&mut self) -> Result<()> {
+        let command_buffers = self
+            .queued_command_buffers
+            .iter()
+            .map(|command_buffer| command_buffer.as_ref())
+            .collect::<Vec<_>>();
+        self.frame_synchronization_manager
+            .submit_graphics_command_buffers(&command_buffers, &self.graphics_queue)?;
+        self.queued_command_buffers.clear();
+        Ok(())
+    }
+
     // XXX: Do not expose this? queue command buffer and call this during present before submitting queued command buffers.
     pub fn swapchain_acquire_next_image(&mut self) -> Result<bool> {
         // XXX: Handle this in FrameSynchronizationManager?
@@ -374,15 +393,15 @@ impl Gpu {
     }
 
     pub fn recreate_swapchain(&mut self) -> Result<()> {
-        self.swapchain.destroy();
-        self.swapchain = Swapchain::new(
-            &self.instance,
-            &self.surface,
-            &self.physical_device,
-            &self.device,
-            SwapchainDesc::new(u32::MAX, u32::MAX, 0, 0),
-        )
-        .with_context(|| format!("recreate_swapchain: Failed to create new swapchain!"))?;
+        self.swapchain = self
+            .swapchain
+            .recreate(
+                &self.instance,
+                &self.surface,
+                &self.physical_device,
+                &self.device,
+            )
+            .with_context(|| format!("recreate_swapchain: Failed to create new swapchain!"))?;
 
         log::info!(
             "Swapchain recreated with extent: {:?}",
@@ -390,6 +409,21 @@ impl Gpu {
         );
 
         Ok(())
+    }
+
+    pub fn set_present_mode(&mut self, present_mode: vk::PresentModeKHR) -> Result<()> {
+        self.swapchain = self.swapchain.recreate_present_mode(
+            &self.instance,
+            &self.surface,
+            &self.physical_device,
+            &self.device,
+            present_mode,
+        )?;
+        Ok(())
+    }
+
+    pub fn swapchain_extent(&self) -> vk::Extent2D {
+        self.swapchain.extent()
     }
 
     pub fn present(&mut self) -> Result<bool> {
@@ -521,8 +555,7 @@ impl Gpu {
             false,
         );
 
-        let mut barriers = Barriers::new();
-        barriers.add_image(image, old_state, new_state);
+        let barriers = Barriers::new().add_image(image, old_state, new_state);
 
         command_buffer.begin()?;
         command_buffer.pipeline_barrier(barriers);
@@ -603,7 +636,7 @@ impl Drop for Gpu {
             self.device
                 .raw()
                 .queue_wait_idle(self.graphics_queue.raw())
-                .unwrap()
+                .unwrap();
         }
 
         log::info!("GPU dropped");

@@ -10,21 +10,12 @@ use winit::{
 use rikka_core::nalgebra;
 use rikka_gpu::gpu::GpuDesc;
 
-use rikka_shader::{compiler::read_shader_binary_file, reflect::*};
-
 use crate::renderer::camera::*;
 
 mod app;
 mod renderer;
 
 fn main() {
-    let shader_data_vert = read_shader_binary_file("shaders/simple_pbr.vert.spv").unwrap();
-    let shader_data_frag = read_shader_binary_file("shaders/simple_pbr.frag.spv").unwrap();
-    let parse_result_vert = reflect_spirv_data(shader_data_vert.bytes.as_slice()).unwrap();
-    let parse_result_frag = reflect_spirv_data(shader_data_frag.bytes.as_slice()).unwrap();
-    let merged_result = merge_reflections(&[parse_result_frag, parse_result_vert]);
-    println!("Merged parse results: {:#?}", merged_result);
-
     let env = env_logger::Env::default()
         .filter_or("MY_LOG_LEVEL", "trace")
         .write_style_or("MY_LOG_STYLE", "always");
