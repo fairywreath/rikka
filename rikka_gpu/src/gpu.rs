@@ -1,6 +1,9 @@
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use crossbeam_channel::{Receiver, Sender};
+use parking_lot::Mutex;
+
 use gpu_allocator::{
     vulkan::{Allocator, AllocatorCreateDesc},
     AllocatorDebugSettings,
@@ -27,16 +30,25 @@ use crate::{
     surface::Surface,
     swapchain::{Swapchain, SwapchainDesc},
     synchronization::{Semaphore, SemaphoreType},
+    transfer::TransferManager,
     types::ImageResourceUpdate,
 };
 
+// XXX: There needs to be a "shared" object reference of this object passed around internally as well
 pub struct Gpu {
+    // transfer_manager: TransferManager,
+
+    // XXX: Remove this once a frame graph is implemented
+    shader_read_image_sender: Sender<Arc<Image>>,
+    shader_read_image_receiver: Receiver<Arc<Image>>,
+
     // XXX: Have an asynchronous transfer handler
     transfer_command_pool: CommandPool,
 
     // XXX: Use escape/terminals for this?
     global_descriptor_pool: Arc<DescriptorPool>,
 
+    // XXX: Use channel for this?
     bindless_images_to_update: Vec<ImageResourceUpdate>,
 
     // XXX: Handle image destruction for bindless images
@@ -63,10 +75,11 @@ pub struct Gpu {
     device: Arc<Device>,
 
     queue_families: QueueFamilyIndices,
+
     graphics_queue: Queue,
+    transfer_queue: Queue,
     present_queue: Queue,
     compute_queue: Queue,
-    transfer_queue: Queue,
 
     surface: Surface,
     instance: Instance,
@@ -267,6 +280,15 @@ impl Gpu {
         let transfer_command_pool =
             CommandPool::new(device.clone(), graphics_queue.family_index())?;
 
+        let (shader_read_image_sender, shader_read_image_receiver) = crossbeam_channel::unbounded();
+
+        // let transfer_manager = TransferManager::new(
+        //     device.clone(),
+        //     transfer_queue,
+        //     allocator.clone(),
+        //     shader_read_image_sender.clone(),
+        // )?;
+
         Ok(Self {
             surface,
             instance,
@@ -301,6 +323,10 @@ impl Gpu {
             default_sampler,
 
             bindless_image_new_index: 0,
+
+            shader_read_image_sender,
+            shader_read_image_receiver,
+            // transfer_manager,
         })
     }
 
@@ -519,8 +545,7 @@ impl Gpu {
         );
 
         command_buffer.upload_data_to_image(image.as_ref(), staging_buffer, data)?;
-        self.graphics_queue
-            .submit(&[&command_buffer], Vec::new(), Vec::new())?;
+        self.graphics_queue.submit(&[&command_buffer], &[], &[])?;
 
         self.wait_idle();
 
@@ -561,8 +586,7 @@ impl Gpu {
         command_buffer.pipeline_barrier(barriers);
         command_buffer.end()?;
 
-        self.graphics_queue
-            .submit(&[&command_buffer], vec![], vec![])?;
+        self.graphics_queue.submit(&[&command_buffer], &[], &[])?;
         self.wait_idle();
 
         Ok(())
@@ -577,7 +601,8 @@ impl Gpu {
         &self.bindless_descriptor_set
     }
 
-    fn add_bindless_image_update(&mut self, update: ImageResourceUpdate) {
+    // XXX: Add mutex to bindless_images_to_update?
+    pub fn add_bindless_image_update(&mut self, update: ImageResourceUpdate) {
         self.bindless_images_to_update.push(update);
     }
 
@@ -627,6 +652,65 @@ impl Gpu {
         //             .update_descriptor_sets(&write_descriptors, &[]);
         //     }
         // }
+    }
+
+    pub fn new_shader_read_image_sender(&self) -> Sender<Arc<Image>> {
+        self.shader_read_image_sender.clone()
+    }
+
+    pub fn update_image_transitions(&mut self, thread_index: u32) -> Result<()> {
+        let mut images_to_transition = Vec::new();
+        if !self.shader_read_image_receiver.is_empty() {
+            images_to_transition.push(self.shader_read_image_receiver.recv()?);
+        }
+
+        if !images_to_transition.is_empty() {
+            let command_buffer = self.current_command_buffer(thread_index)?;
+
+            command_buffer.begin()?;
+
+            let mut barriers = Barriers::new();
+            for image in &images_to_transition {
+                barriers = barriers.add_image(
+                    image.as_ref(),
+                    ResourceState::COPY_DESTINATION,
+                    ResourceState::SHADER_RESOURCE,
+                );
+            }
+            command_buffer.pipeline_barrier(barriers);
+
+            command_buffer.end()?;
+
+            self.queue_graphics_command_buffer(command_buffer);
+        }
+
+        // Bind after update
+        for image in images_to_transition.drain(..) {
+            self.bindless_images_to_update.push(ImageResourceUpdate {
+                frame: 0, // Not used
+                image: Some(image),
+                sampler: None,
+            })
+        }
+
+        images_to_transition.clear();
+
+        Ok(())
+    }
+
+    // XXX: Remove this
+    // pub fn transfer_manager(&self) -> &TransferManager {
+    //     &self.transfer_manager
+    // }
+
+    pub fn new_transfer_manager(&self) -> Result<TransferManager> {
+        TransferManager::new(
+            self.device.clone(),
+            self.transfer_queue.clone(),
+            self.graphics_queue.clone(),
+            self.allocator.clone(),
+            self.shader_read_image_sender.clone(),
+        )
     }
 }
 

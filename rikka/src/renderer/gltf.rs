@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::Sender;
+
 use anyhow::{anyhow, Context, Result};
 use ddsfile::{Dds, DxgiFormat};
 use gltf::Gltf;
@@ -17,7 +19,7 @@ use rikka_gpu::{
     image::*, sampler::*,
 };
 
-use crate::renderer::MaterialData;
+use crate::renderer::{loader::*, MaterialData};
 
 type BufferHandle = Arc<Buffer>;
 type SamplerHandle = Arc<Sampler>;
@@ -150,7 +152,7 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dds.get_width(), dds.get_height(), 1)
                 .set_format(vulkan_format)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let mut texture_image = gpu.create_image(image_desc)?;
+            let texture_image = gpu.create_image(image_desc)?;
             let texture_image = Arc::new(texture_image);
 
             // XXX: Handle mip maps and texture layers
@@ -174,7 +176,7 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dynamic_image.width(), dynamic_image.height(), 1)
                 .set_format(vk::Format::R8G8B8A8_UNORM)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let mut texture_image = gpu.create_image(image_desc)?;
+            let texture_image = gpu.create_image(image_desc)?;
             let texture_image = Arc::new(texture_image);
 
             let texture_rgba8 = dynamic_image.clone().into_rgba8();
@@ -194,10 +196,62 @@ impl GltfScene {
         }
     }
 
+    fn create_image(
+        gpu: &mut Gpu,
+        file_name: &str,
+        // XXX: Use a channel for this
+        async_loader: &mut AsynchronousLoader,
+    ) -> Result<Arc<Image>> {
+        let data = std::fs::read(file_name)?;
+        let mut data = std::io::Cursor::new(&data);
+
+        // XXX: How slow is this read?
+        if let Ok(dds) = ddsfile::Dds::read(&mut data) {
+            let mut vulkan_format = vk::Format::UNDEFINED;
+
+            if let Some(format) = dds.get_dxgi_format() {
+                vulkan_format = dxgi_format_to_vulkan_format(format);
+            } else if let Some(format) = dds.get_d3d_format() {
+                todo!()
+            }
+
+            let image_desc = ImageDesc::new(dds.get_width(), dds.get_height(), 1)
+                .set_format(vulkan_format)
+                .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
+            let texture_image = Arc::new(gpu.create_image(image_desc)?);
+
+            async_loader.request_image_file_load(file_name, texture_image.clone());
+            Ok(texture_image)
+        } else {
+            // log::info!("Attempting to read file {}", file_name);
+
+            // let reader = image::io::Reader::new(data);
+            let reader = image::io::Reader::open(file_name)?;
+
+            // XXX: Use proper format instead of always converting to R8G8B8A_UNORM?
+            // let format = reader.format()?;
+            let format = vk::Format::R8G8B8A8_UNORM;
+
+            let (width, height) = reader.into_dimensions()?;
+
+            let image_desc = ImageDesc::new(width, height, 1)
+                .set_format(format)
+                .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
+            let texture_image = Arc::new(gpu.create_image(image_desc)?);
+
+            // log::info!("Finished (soft) reading file {}", file_name);
+
+            async_loader.request_image_file_load(file_name, texture_image.clone());
+            Ok(texture_image)
+        }
+    }
+
     fn load_images(
         gpu: &mut Gpu,
         root_path_buf: &PathBuf,
         images: gltf::iter::Images,
+        // XXX: Use a channel for this
+        async_loader: &mut AsynchronousLoader,
     ) -> Result<Vec<Arc<Image>>> {
         let mut gpu_images = Vec::with_capacity(images.len());
 
@@ -208,7 +262,8 @@ impl GltfScene {
                 gltf::image::Source::Uri { uri, .. } => {
                     let mut uri_path = root_path_buf.clone();
                     uri_path.push(uri);
-                    GltfScene::create_image_from_file(gpu, uri_path.to_str().unwrap())
+                    // GltfScene::create_image_from_file(gpu, uri_path.to_str().unwrap())
+                    GltfScene::create_image(gpu, uri_path.to_str().unwrap(), async_loader)
                 }
                 gltf::image::Source::View { view, .. } => {
                     panic!("glTF image loading from view not implemented!");
@@ -320,13 +375,16 @@ impl GltfScene {
         file_name: &str,
         uniform_buffer: &Arc<Buffer>,
         descriptor_set_layout: &Arc<DescriptorSetLayout>,
+        // XXX: Use a channel for this
+        async_loader: &mut AsynchronousLoader,
     ) -> Result<Self> {
         let mut root_path_buf = PathBuf::from(file_name);
         root_path_buf.pop();
 
         let mut gltf_file = Gltf::open(file_name)?;
 
-        let gpu_images = GltfScene::load_images(gpu, &root_path_buf, gltf_file.images())?;
+        let gpu_images =
+            GltfScene::load_images(gpu, &root_path_buf, gltf_file.images(), async_loader)?;
 
         let gpu_samplers = GltfScene::load_samplers(gpu, gltf_file.samplers())?;
 

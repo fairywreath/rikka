@@ -56,21 +56,11 @@ pub struct Material {
 
 pub struct Renderer {
     gpu: Gpu,
-
-    image_update_receiver: Receiver<Arc<Image>>,
-    image_update_sender: Sender<Arc<Image>>,
-    images_to_update: Vec<Arc<Image>>,
 }
 
 impl Renderer {
     pub fn new(gpu: Gpu) -> Self {
-        let (image_update_sender, image_update_receiver) = crossbeam_channel::unbounded();
-        Renderer {
-            gpu,
-            image_update_sender,
-            image_update_receiver,
-            images_to_update: Vec::new(),
-        }
+        Renderer { gpu }
     }
 
     // XXX: Remove these eventually
@@ -170,26 +160,6 @@ impl Renderer {
 
     pub fn queue_command_buffer(&mut self, command_buffer: Arc<CommandBuffer>) {
         self.gpu.queue_graphics_command_buffer(command_buffer);
-    }
-
-    pub fn image_update_sender(&self) -> Sender<Arc<Image>> {
-        Sender::clone(&self.image_update_sender)
-    }
-
-    /// Manually add image to update. This should ideally be done elsewhere through the sender
-    pub fn add_image_update(&mut self, image: Arc<Image>) {
-        self.images_to_update.push(image);
-    }
-
-    pub fn add_image_update_commands(&mut self, thread_index: u32) -> Result<()> {
-        while !self.image_update_receiver.is_empty() {
-            self.images_to_update
-                .push(self.image_update_receiver.recv()?);
-        }
-
-        // XXX: Transition barriers
-
-        Ok(())
     }
 
     /// XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.

@@ -80,6 +80,7 @@ pub enum QueueType {
     Transfer,
 }
 
+#[derive(Clone)]
 pub struct Queue {
     device: Arc<Device>,
     raw: vk::Queue,
@@ -99,8 +100,8 @@ impl Queue {
         &self,
         command_buffers: &[&CommandBuffer],
         // XXX: Change these to array slices
-        wait_semaphores: Vec<SemaphoreSubmitInfo>,
-        signal_semaphores: Vec<SemaphoreSubmitInfo>,
+        wait_semaphores: &[SemaphoreSubmitInfo],
+        signal_semaphores: &[SemaphoreSubmitInfo],
     ) -> Result<()> {
         let wait_semaphores_info = wait_semaphores
             .iter()

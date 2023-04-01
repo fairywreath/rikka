@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use rikka_core::vk;
@@ -48,6 +48,29 @@ impl Semaphore {
 
     pub fn semaphore_type(&self) -> SemaphoreType {
         self.semaphore_type
+    }
+
+    pub fn wait_for_value(&self, value: u64) -> Result<()> {
+        if self.semaphore_type != SemaphoreType::Timeline {
+            return Err(anyhow::anyhow!(
+                "Cannot call wait for value for non-timeline semaphore"
+            ));
+        }
+
+        let semaphores = [self.raw];
+        let values = [value];
+
+        let wait_info = vk::SemaphoreWaitInfo::builder()
+            .semaphores(&semaphores)
+            .values(&values);
+
+        unsafe {
+            self.device
+                .raw()
+                .wait_semaphores(&wait_info, Duration::new(10, 0).as_nanos() as u64)?;
+        }
+
+        Ok(())
     }
 }
 

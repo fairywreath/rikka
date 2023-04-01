@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 use rikka_core::vk;
 
-use crate::{buffer::Buffer, device::Device, image::Image, queue::QueueType};
+use crate::{buffer::Buffer, device::Device, image::Image, queue::*};
 
 bitflags! {
     pub struct ResourceState : u32
@@ -240,12 +240,38 @@ impl Barriers {
             new_state.into(),
             image.raw(),
             image.subresource_range(),
+            vk::QUEUE_FAMILY_IGNORED,
+            vk::QUEUE_FAMILY_IGNORED,
         );
 
         self
     }
 
-    fn add_image_from_vulkan_parameters(
+    pub fn add_image_with_queue_transfer(
+        mut self,
+        image: &Image,
+        old_state: ResourceState,
+        new_state: ResourceState,
+        src_queue: &Queue,
+        dst_queue: &Queue,
+    ) -> Self {
+        self.add_image_from_vulkan_parameters(
+            old_state.into(),
+            determine_pipeline_flags_from_access_flags(old_state.into(), QueueType::Graphics),
+            new_state.into(),
+            determine_pipeline_flags_from_access_flags(new_state.into(), QueueType::Graphics),
+            old_state.into(),
+            new_state.into(),
+            image.raw(),
+            image.subresource_range(),
+            src_queue.family_index(),
+            dst_queue.family_index(),
+        );
+
+        self
+    }
+
+    pub fn add_image_from_vulkan_parameters(
         &mut self,
         src_access_mask: vk::AccessFlags2,
         src_stage_mask: vk::PipelineStageFlags2,
@@ -255,6 +281,8 @@ impl Barriers {
         new_layout: vk::ImageLayout,
         image: vk::Image,
         subresource_range: vk::ImageSubresourceRange,
+        src_queue_family_index: u32,
+        dst_queue_family_index: u32,
     ) {
         let image_barrier = vk::ImageMemoryBarrier2::builder()
             .src_access_mask(src_access_mask)
@@ -265,8 +293,8 @@ impl Barriers {
             .new_layout(new_layout)
             .image(image)
             .subresource_range(subresource_range)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED);
+            .src_queue_family_index(src_queue_family_index)
+            .dst_queue_family_index(dst_queue_family_index);
 
         self.image_barriers.push(image_barrier.build());
     }

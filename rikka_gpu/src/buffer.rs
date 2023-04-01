@@ -1,14 +1,17 @@
 use std::{
     mem::{align_of, size_of_val},
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use anyhow::{Error, Result};
+use parking_lot::Mutex;
+
 use gpu_allocator::{
     vulkan::{Allocation, AllocationCreateDesc, Allocator},
     MemoryLocation,
 };
+
 use rikka_core::{ash, vk};
 
 use crate::{
@@ -103,7 +106,7 @@ impl Buffer {
             }
         };
 
-        let allocation = allocator.lock().unwrap().allocate(&AllocationCreateDesc {
+        let allocation = allocator.lock().allocate(&AllocationCreateDesc {
             name: "buffer",
             requirements,
             location,
@@ -166,7 +169,6 @@ impl Drop for Buffer {
         unsafe { self.device.raw().destroy_buffer(self.raw, None) };
         self.allocator
             .lock()
-            .unwrap()
             .free(self.allocation.take().unwrap())
             .unwrap();
     }

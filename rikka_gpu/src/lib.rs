@@ -13,6 +13,8 @@ pub mod types;
 
 pub mod constants;
 
+pub mod transfer;
+
 mod device;
 mod frame;
 mod handle;

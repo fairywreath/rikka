@@ -1,8 +1,10 @@
 use std::{
     mem::{align_of, size_of_val, swap},
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
+
+use parking_lot::Mutex;
 
 use anyhow::{Context, Error, Result};
 use gpu_allocator::{
@@ -165,7 +167,7 @@ impl Image {
         // XXX: Always GPU only (and use staging buffer to copy)?
         // let memory_location = MemoryLocation::GpuOnly;
 
-        let allocation = allocator.lock().unwrap().allocate(&AllocationCreateDesc {
+        let allocation = allocator.lock().allocate(&AllocationCreateDesc {
             name: "image",
             requirements,
             location: desc.memory_location,
@@ -304,6 +306,14 @@ impl Image {
         self.sampler = Some(sampler);
     }
 
+    pub fn width(&self) -> u32 {
+        self.extent.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.extent.height
+    }
+
     pub fn extent(&self) -> vk::Extent3D {
         self.extent
     }
@@ -337,7 +347,6 @@ impl Drop for Image {
                 .clone()
                 .unwrap()
                 .lock()
-                .unwrap()
                 .free(self.allocation.take().unwrap())
                 .unwrap();
 

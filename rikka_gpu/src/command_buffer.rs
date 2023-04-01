@@ -30,19 +30,15 @@ impl CommandPool {
         let command_pool_info =
             vk::CommandPoolCreateInfo::builder().queue_family_index(queue_family_index);
 
-        let command_pool = unsafe {
+        let raw = unsafe {
             let command_pool = device.raw().create_command_pool(&command_pool_info, None)?;
             device
                 .raw()
                 .reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())?;
-
             command_pool
         };
 
-        Ok(Self {
-            raw: command_pool,
-            device: device,
-        })
+        Ok(Self { raw, device })
     }
 
     pub fn allocate_command_buffers(
@@ -60,6 +56,7 @@ impl CommandPool {
 
         Ok(command_buffers)
     }
+
     pub fn allocate_command_buffer(
         &self,
         level: vk::CommandBufferLevel,
@@ -280,6 +277,7 @@ impl Drop for CommandBufferManager {
 }
 
 // Information for CommandBufferManager
+#[derive(Copy, Clone, Debug)]
 pub struct CommandBufferMetaData {
     // index to command buffer array in CommandBufferManager
     pub array_index: u32,
@@ -287,6 +285,7 @@ pub struct CommandBufferMetaData {
     pub frame_index: u32,
     pub thread_index: u32,
 }
+
 pub struct CommandBuffer {
     device: Arc<Device>,
     raw: vk::CommandBuffer,
@@ -297,6 +296,7 @@ pub struct CommandBuffer {
     // Reference to pipeline?
     // pipeline: vk::Pipeline,
     // mesh_shading_context
+    // XXX: Technically needs to hold a strong ref to CommandPool
 }
 
 impl CommandBuffer {

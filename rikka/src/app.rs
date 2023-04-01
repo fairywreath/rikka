@@ -1,7 +1,9 @@
-use std::sync::{Arc, Weak};
+use std::{
+    mem::ManuallyDrop,
+    sync::{Arc, Weak},
+};
 
 use anyhow::{Context, Error, Result};
-use rayon::*;
 
 use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
 
@@ -11,7 +13,7 @@ use rikka_gpu::{
     sampler::*, shader_state::*, types::*,
 };
 
-use crate::renderer::{gltf::*, renderer::*};
+use crate::renderer::{gltf::*, loader::*, renderer::*};
 
 pub struct RikkaApp {
     uniform_buffer: Arc<Buffer>,
@@ -25,6 +27,8 @@ pub struct RikkaApp {
     gltf_scene: GltfScene,
 
     depth_image: Arc<Image>,
+
+    thread_pool: ManuallyDrop<rayon::ThreadPool>,
 
     // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
     // gpu: Gpu,
@@ -134,15 +138,32 @@ impl RikkaApp {
                     ),
             )?
         };
+        let mut transfer_manager = renderer.gpu().new_transfer_manager()?;
+        let mut async_loader =
+            AsynchronousLoader::new(transfer_manager.new_image_upload_request_sender());
 
         let gltf_scene = GltfScene::from_file(
             &mut renderer.gpu_mut(),
             gltf_file_name,
             &uniform_buffer,
             &graphics_pipeline.descriptor_set_layouts()[0],
+            &mut async_loader,
         )?;
 
-        // let thread_pool = ThreadPoolBuilder::new().num_threads(3).build()?;
+        let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(3).build()?;
+
+        // XXX FIXME: These will be moved to the global/static threadspace and GPU will be dropped first before these, very unsafe!
+        thread_pool.spawn(move || loop {
+            async_loader
+                .update()
+                .expect("Async loader failed to update!");
+        });
+
+        thread_pool.spawn(move || loop {
+            transfer_manager
+                .perform_transfers()
+                .expect("GPU transfer manager failed to update!");
+        });
 
         Ok(Self {
             renderer,
@@ -156,6 +177,8 @@ impl RikkaApp {
 
             depth_image,
             zero_buffer,
+
+            thread_pool: ManuallyDrop::new(thread_pool),
         })
     }
 
@@ -269,6 +292,12 @@ impl RikkaApp {
         }
 
         self.renderer.queue_command_buffer(command_buffer);
+
+        self.renderer
+            .gpu_mut()
+            .update_image_transitions(0)
+            .expect("Failed to update GPU image transitions");
+
         self.renderer.end_frame()?;
 
         Ok(())
@@ -290,6 +319,11 @@ impl RikkaApp {
 
 impl Drop for RikkaApp {
     fn drop(&mut self) {
+        // Terminate spawned threads
+        unsafe {
+            ManuallyDrop::drop(&mut self.thread_pool);
+        }
+
         // XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
         //      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
         //      object destruction until the end of the current frame

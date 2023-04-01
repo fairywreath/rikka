@@ -254,7 +254,7 @@ impl FrameSynchronizationManager {
         // }
 
         // Signal present/render complete semaphore and new graphics timeline value.
-        let signal_semaphores = vec![
+        let signal_semaphores = [
             SemaphoreSubmitInfo {
                 semaphore: self.current_render_complete_semaphore(),
                 stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -267,7 +267,7 @@ impl FrameSynchronizationManager {
             },
         ];
 
-        queue.submit(command_buffers, wait_semaphores, signal_semaphores)?;
+        queue.submit(command_buffers, &wait_semaphores, &signal_semaphores)?;
 
         Ok(())
     }

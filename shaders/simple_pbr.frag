@@ -137,4 +137,5 @@ void main()
     material_color.rgb = encode_srgb(material_color.rgb);
 
     out_FragColor = vec4(material_color, base_color.a);
+    // out_FragColor = vec4(diffuseTexture.rgb, base_color.a);
 }

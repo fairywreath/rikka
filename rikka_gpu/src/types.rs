@@ -337,7 +337,7 @@ impl RenderingState {
 pub struct ImageResourceUpdate {
     pub frame: u64,
 
-    // XXX: Need strong reference here?
+    // XXX: Images does not have to be an option here
     pub image: Option<Arc<Image>>,
     pub sampler: Option<Arc<Sampler>>,
 }
