@@ -339,7 +339,7 @@ impl GltfScene {
     }
 
     fn load_buffer_views(
-        gpu: &Gpu,
+        gpu: &mut Gpu,
         buffer_views: gltf::iter::Views,
         buffers_data: &[Vec<u8>],
     ) -> Result<Vec<BufferHandle>> {
@@ -354,15 +354,25 @@ impl GltfScene {
 
             let data = &buffers_data[buffer_view.buffer().index()][range_start..range_end];
 
+            let staging_buffer = gpu.create_buffer(
+                BufferDesc::new()
+                    .set_size(length as _)
+                    // .set_usage_flags(
+                    //     vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
+                    // )
+                    .set_device_only(false),
+            )?;
+            staging_buffer.copy_data_to_buffer(data)?;
+
             let gpu_buffer = gpu.create_buffer(
                 BufferDesc::new()
                     .set_size(length as _)
                     .set_usage_flags(
                         vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
                     )
-                    .set_device_only(false),
+                    .set_device_only(true),
             )?;
-            gpu_buffer.copy_data_to_buffer(data)?;
+            gpu.copy_buffer(&staging_buffer, &gpu_buffer)?;
 
             gpu_buffers.push(Arc::new(gpu_buffer));
         }
@@ -457,10 +467,11 @@ impl GltfScene {
                     mesh_draw.tangent_offset = tangents_accessor.offset() as _;
 
                     // log::info!("Contains tangents!");
-                } else {
-                    // log::info!("Does not contain tangents! index {}", primitive.index());
-                    // return Err(anyhow!(r#"glTF tangents accessor does not exist!"#));
                 }
+                // else {
+                // log::info!("Does not contain tangents! index {}", primitive.index());
+                // return Err(anyhow!(r#"glTF tangents accessor does not exist!"#));
+                // }
 
                 let material = primitive.material();
                 let pbr_material = material.pbr_metallic_roughness();
@@ -480,8 +491,8 @@ impl GltfScene {
                     );
 
                     // XXX: Use a default texture or use a different shader pipeline
-                    mesh_draw.textures_incomplete = true;
-                    mesh_draws.push(mesh_draw);
+                    // mesh_draw.textures_incomplete = true;
+                    // mesh_draws.push(mesh_draw);
                     continue;
                 }
 
@@ -496,8 +507,8 @@ impl GltfScene {
                     );
 
                     // XXX: Use a default texture or use a different shader pipeline
-                    mesh_draw.textures_incomplete = true;
-                    mesh_draws.push(mesh_draw);
+                    // mesh_draw.textures_incomplete = true;
+                    // mesh_draws.push(mesh_draw);
                     continue;
                 }
 
@@ -512,9 +523,9 @@ impl GltfScene {
                     );
 
                     // XXX: Use a default texture or use a different shader pipeline
-                    mesh_draw.textures_incomplete = true;
-                    mesh_draws.push(mesh_draw);
-                    continue;
+                    // mesh_draw.textures_incomplete = true;
+                    // mesh_draws.push(mesh_draw);
+                    // continue;
                 }
 
                 mesh_draw.material_data = MaterialData {

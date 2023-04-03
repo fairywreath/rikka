@@ -226,11 +226,17 @@ impl RikkaApp {
             command_buffer.begin_rendering(rendering_state);
 
             command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
+            // //    XXX: Bind this automatically in the GPU layer
+            command_buffer.bind_descriptor_set(
+                self.renderer.gpu().bindless_descriptor_set().as_ref(),
+                self.graphics_pipeline.raw_layout(),
+                1,
+            );
 
             for mesh_draw in &self.gltf_scene.mesh_draws {
-                if mesh_draw.textures_incomplete {
-                    continue;
-                }
+                //     // if mesh_draw.textures_incomplete {
+                //     //     continue;
+                //     // }
 
                 command_buffer.bind_vertex_buffer(
                     mesh_draw.position_buffer.as_ref().unwrap(),
@@ -250,7 +256,7 @@ impl RikkaApp {
 
                 if let Some(tangent_buffer) = &mesh_draw.tangent_buffer {
                     command_buffer.bind_vertex_buffer(
-                        tangent_buffer.as_ref(),
+                        mesh_draw.tangent_buffer.as_ref().unwrap(),
                         3,
                         mesh_draw.tangent_offset as _,
                     );
@@ -269,14 +275,9 @@ impl RikkaApp {
                     0,
                 );
 
-                // XXX: Bind this automatically in the GPU layer
-                command_buffer.bind_descriptor_set(
-                    self.renderer.gpu().bindless_descriptor_set().as_ref(),
-                    self.graphics_pipeline.raw_layout(),
-                    1,
-                );
-
                 command_buffer.draw_indexed(mesh_draw.count, 1, 0, 0, 0);
+
+                // println!("CAlling draw with index count {}", mesh_draw.count);
             }
 
             command_buffer.end_rendering();

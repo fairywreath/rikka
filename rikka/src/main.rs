@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use winit::{
     dpi,
@@ -104,6 +104,10 @@ fn main() {
             let now = Instant::now();
             let dt = now - last_render_time;
             last_render_time = now;
+
+            let fps = Duration::new(1, 0).as_secs_f64() / dt.as_secs_f64();
+
+            // log::info!("FPS: {}, frame time: {}", fps, dt.as_secs_f64());
 
             camera_controller.update_view(&mut camera_view, dt);
             rikka_app.update_view(camera_view.matrix(), camera_view.position());

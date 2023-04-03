@@ -158,7 +158,9 @@ impl Swapchain {
                 )
                 .pre_transform(capabilities.current_transform)
                 .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                .present_mode(present_mode);
+                // XXX: Query supported present modes and make sure requested present mode is supported
+                // .present_mode(present_mode);
+                .present_mode(vk::PresentModeKHR::FIFO);
 
             if swapchain_desc.graphics_queue_family_index
                 == swapchain_desc.present_queue_family_index

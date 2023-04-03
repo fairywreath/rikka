@@ -522,6 +522,33 @@ impl Gpu {
         Ok(())
     }
 
+    pub fn copy_buffer(&mut self, src: &Buffer, dst: &Buffer) -> Result<()> {
+        let command_buffer = self
+            .transfer_command_pool
+            .allocate_command_buffer(vk::CommandBufferLevel::PRIMARY)?;
+        let command_buffer = CommandBuffer::new(
+            self.device.clone(),
+            command_buffer,
+            // XXX: Implement trait default for this
+            CommandBufferMetaData {
+                array_index: 0,
+                frame_index: 0,
+                thread_index: 0,
+            },
+            false,
+        );
+
+        // command_buffer.upload_data_to_image(image.as_ref(), staging_buffer, data)?;
+        command_buffer.begin()?;
+        command_buffer.copy_buffer(src, dst, src.size() as u64, 0, 0);
+        command_buffer.end()?;
+        self.graphics_queue.submit(&[&command_buffer], &[], &[])?;
+
+        self.wait_idle();
+
+        Ok(())
+    }
+
     pub fn copy_data_to_image<T: Copy>(
         // For command buffer manager mut access
         &mut self,

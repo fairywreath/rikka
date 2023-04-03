@@ -46,8 +46,8 @@ impl Instance {
         let instance_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names)
-            .enabled_layer_names(&layer_names)
-            .push_next(&mut validation_features);
+            .enabled_layer_names(&layer_names);
+        // .push_next(&mut validation_features);
 
         let instance = unsafe { entry.create_instance(&instance_info, None)? };
 
