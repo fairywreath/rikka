@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use anyhow::Result;
-use rikka_core::vk;
+use rikka_core::{ash, vk};
 
 use crate::{
     command_buffer::CommandBuffer,
-    device::Device,
     synchronization::{Semaphore, SemaphoreType},
 };
 
@@ -82,13 +79,13 @@ pub enum QueueType {
 
 #[derive(Clone)]
 pub struct Queue {
-    device: Arc<Device>,
+    device: ash::Device,
     raw: vk::Queue,
     family_index: u32,
 }
 
 impl Queue {
-    pub fn new(device: Arc<Device>, raw: vk::Queue, family_index: u32) -> Self {
+    pub unsafe fn new(device: ash::Device, raw: vk::Queue, family_index: u32) -> Self {
         Self {
             device,
             raw,
@@ -159,7 +156,7 @@ impl Queue {
             .build();
 
         unsafe {
-            self.device.raw().queue_submit2(
+            self.device.queue_submit2(
                 self.raw,
                 std::slice::from_ref(&submit_info),
                 vk::Fence::null(),

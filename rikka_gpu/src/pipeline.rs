@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use rikka_core::vk::{self, Win32KeyedMutexAcquireReleaseInfoKHRBuilder};
+use rikka_core::vk;
 
 use crate::{
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
+    constants,
     descriptor_set::*,
     device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    shader_state::{self, *},
+    escape::Escape,
+    factory::{DeviceGuard, Factory},
+    shader_state::*,
     types::*,
 };
 
@@ -59,14 +59,6 @@ impl GraphicsPipelineDesc {
         }
     }
 
-    // pub fn set_shader_stages(
-    //     mut self,
-    //     shader_stages: &[vk::PipelineShaderStageCreateInfo],
-    // ) -> Self {
-    //     self.shader_stages = shader_stages.to_vec();
-    //     self
-    // }
-
     pub fn set_shader_state(mut self, shader_state: ShaderStateDesc) -> Self {
         self.shader_state = shader_state;
         self
@@ -83,6 +75,25 @@ impl GraphicsPipelineDesc {
         self
     }
 
+    pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
+        self.rasterization_state = rasterization_state;
+        self
+    }
+
+    pub fn set_vertex_input_state(mut self, vertex_input_state: VertexInputState) -> Self {
+        self.vertex_input_state = vertex_input_state;
+        self
+    }
+
+    // Not used as shader and descriptor layout information is obtained through shader reflection.
+    // pub fn set_shader_stages(
+    //     mut self,
+    //     shader_stages: &[vk::PipelineShaderStageCreateInfo],
+    // ) -> Self {
+    //     self.shader_stages = shader_stages.to_vec();
+    //     self
+    // }
+
     // pub fn set_descriptor_set_layouts(
     //     mut self,
     //     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
@@ -98,31 +109,26 @@ impl GraphicsPipelineDesc {
     //     self.descriptor_set_layouts.push(descriptor_set_layout);
     //     self
     // }
-
-    pub fn set_rasterization_state(mut self, rasterization_state: RasterizationState) -> Self {
-        self.rasterization_state = rasterization_state;
-        self
-    }
-
-    pub fn set_vertex_input_state(mut self, vertex_input_state: VertexInputState) -> Self {
-        self.vertex_input_state = vertex_input_state;
-        self
-    }
 }
 
 pub struct GraphicsPipeline {
+    device: DeviceGuard,
+
     raw: vk::Pipeline,
     raw_layout: vk::PipelineLayout,
-    device: Arc<Device>,
 
     // XXX: Do we need this?
     desc: GraphicsPipelineDesc,
 
-    descriptor_set_layouts: Vec<Arc<DescriptorSetLayout>>,
+    descriptor_set_layouts: Vec<Escape<DescriptorSetLayout>>,
 }
 
 impl GraphicsPipeline {
-    pub fn new(device: Arc<Device>, desc: GraphicsPipelineDesc) -> Result<Self> {
+    pub unsafe fn create(
+        device: DeviceGuard,
+        factory: &Factory,
+        desc: GraphicsPipelineDesc,
+    ) -> Result<Self> {
         // Create shader modules
         let shader_state = ShaderState::new(device.clone(), desc.shader_state.clone())?;
 
@@ -162,7 +168,7 @@ impl GraphicsPipeline {
 
         let descriptor_set_layouts = layout_descs
             .into_iter()
-            .map(|desc| Ok(Arc::new(DescriptorSetLayout::new(device.clone(), desc)?)))
+            .map(|desc| Ok(factory.create_descriptor_set_layout(desc)?))
             .collect::<Result<Vec<_>>>()?;
 
         let vulkan_descriptor_set_layouts = descriptor_set_layouts
@@ -200,12 +206,10 @@ impl GraphicsPipeline {
             .set_layouts(&vulkan_descriptor_set_layouts)
             .push_constant_ranges(&push_constant_ranges);
 
-        let pipeline_layout = unsafe {
-            device
-                .raw()
-                .create_pipeline_layout(&pipeline_layout_info, None)
-                .context("Failed to create vulkan pipeline layout!")?
-        };
+        let pipeline_layout = device
+            .raw()
+            .create_pipeline_layout(&pipeline_layout_info, None)
+            .context("Failed to create vulkan pipeline layout!")?;
 
         // Create vulkan pipeline
 
@@ -370,16 +374,14 @@ impl GraphicsPipeline {
             .push_next(&mut pipeline_rendering_info)
             .build();
 
-        let raw = unsafe {
-            device
-                .raw()
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    std::slice::from_ref(&pipeline_info),
-                    None,
-                )
-                .map_err(|e| e.1)?[0]
-        };
+        let raw = device
+            .raw()
+            .create_graphics_pipelines(
+                vk::PipelineCache::null(),
+                std::slice::from_ref(&pipeline_info),
+                None,
+            )
+            .map_err(|e| e.1)?[0];
 
         Ok(Self {
             raw,
@@ -390,9 +392,11 @@ impl GraphicsPipeline {
         })
     }
 
-    pub unsafe fn destroy(&self, device: &Device) {
-        device.raw().destroy_pipeline(self.raw, None);
-        device.raw().destroy_pipeline_layout(self.raw_layout, None);
+    pub unsafe fn destroy(self) {
+        self.device.raw().destroy_pipeline(self.raw, None);
+        self.device
+            .raw()
+            .destroy_pipeline_layout(self.raw_layout, None);
     }
 
     pub fn raw(&self) -> vk::Pipeline {
@@ -403,15 +407,7 @@ impl GraphicsPipeline {
         self.raw_layout
     }
 
-    pub fn descriptor_set_layouts(&self) -> &[Arc<DescriptorSetLayout>] {
+    pub fn descriptor_set_layouts(&self) -> &[Escape<DescriptorSetLayout>] {
         &self.descriptor_set_layouts
-    }
-}
-
-impl Drop for GraphicsPipeline {
-    fn drop(&mut self) {
-        unsafe {
-            self.destroy(self.device.as_ref());
-        }
     }
 }

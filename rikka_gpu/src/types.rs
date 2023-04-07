@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use rikka_core::vk;
 
-use crate::{image::Image, sampler::Sampler};
+use crate::{escape::Handle, image::Image, sampler::Sampler};
 
 pub enum PipelineStage {
     DrawIndirect,
@@ -338,6 +336,6 @@ pub struct ImageResourceUpdate {
     pub frame: u64,
 
     // XXX: Images does not have to be an option here
-    pub image: Option<Arc<Image>>,
-    pub sampler: Option<Arc<Sampler>>,
+    pub image: Option<Handle<Image>>,
+    pub sampler: Option<Handle<Sampler>>,
 }

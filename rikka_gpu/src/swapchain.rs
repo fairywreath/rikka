@@ -1,15 +1,13 @@
-use std::{mem::swap, sync::Arc};
-
 use anyhow::{Context, Result};
 use rikka_core::{ash::extensions::khr, vk};
 
 use crate::{
-    device::Device, image::Image, instance::Instance, physical_device::PhysicalDevice,
-    queue::Queue, surface::Surface, swapchain, synchronization::Semaphore,
+    device::Device, escape::Escape, factory::*, image::Image, instance::Instance,
+    physical_device::PhysicalDevice, queue::Queue, surface::Surface, synchronization::Semaphore,
 };
 
 pub struct Swapchain {
-    device: Arc<Device>,
+    device: DeviceGuard,
     ash_swapchain: khr::Swapchain,
     vulkan_swapchain: vk::SwapchainKHR,
 
@@ -24,7 +22,7 @@ pub struct Swapchain {
     image_count: u32,
     images: Vec<vk::Image>,
     image_views: Vec<vk::ImageView>,
-    image_handles: Vec<Arc<Image>>,
+    image_handles: Vec<Image>,
 
     // Image index obtained from AcquireNextImage.
     vulkan_image_index: u32,
@@ -67,7 +65,7 @@ impl Swapchain {
         instance: &Instance,
         surface: &Surface,
         physical_device: &PhysicalDevice,
-        device: &Arc<Device>,
+        device: DeviceGuard,
         swapchain_desc: SwapchainDesc,
     ) -> Result<Self> {
         let surface_format = {
@@ -179,7 +177,7 @@ impl Swapchain {
         let vulkan_swapchain = unsafe { ash_swapchain.create_swapchain(&create_info, None)? };
 
         let mut swapchain = Self {
-            device: device.clone(),
+            device,
             ash_swapchain,
             vulkan_swapchain,
 
@@ -262,7 +260,7 @@ impl Swapchain {
         self.color_space
     }
 
-    pub fn current_image(&self) -> vk::Image {
+    pub fn current_vulkan_image(&self) -> vk::Image {
         self.images[self.vulkan_image_index as usize]
     }
 
@@ -270,11 +268,11 @@ impl Swapchain {
         self.image_views[self.vulkan_image_index as usize]
     }
 
-    pub fn current_image_handle(&self) -> &Arc<Image> {
+    pub fn current_image(&self) -> &Image {
         &self.image_handles[self.vulkan_image_index as usize]
     }
 
-    pub fn device(&self) -> &Arc<Device> {
+    pub fn device(&self) -> &DeviceGuard {
         &self.device
     }
 
@@ -283,7 +281,7 @@ impl Swapchain {
         instance: &Instance,
         surface: &Surface,
         physical_device: &PhysicalDevice,
-        device: &Arc<Device>,
+        device: DeviceGuard,
         swapchain_desc: SwapchainDesc,
     ) -> Result<Self> {
         self.destroy();
@@ -295,7 +293,7 @@ impl Swapchain {
         instance: &Instance,
         surface: &Surface,
         physical_device: &PhysicalDevice,
-        device: &Arc<Device>,
+        device: DeviceGuard,
         present_mode: vk::PresentModeKHR,
     ) -> Result<Self> {
         let desc = SwapchainDesc::new(
@@ -314,7 +312,7 @@ impl Swapchain {
         instance: &Instance,
         surface: &Surface,
         physical_device: &PhysicalDevice,
-        device: &Arc<Device>,
+        device: DeviceGuard,
     ) -> Result<Self> {
         let desc = SwapchainDesc::new(
             u32::MAX,
@@ -380,11 +378,7 @@ impl Swapchain {
             };
 
             image_views.push(image_view);
-            image_handles.push(Arc::new(Image::from_swapchain(
-                &self,
-                image.clone(),
-                image_view,
-            )));
+            image_handles.push(Image::from_swapchain(&self, image.clone(), image_view));
         }
 
         self.images = images;

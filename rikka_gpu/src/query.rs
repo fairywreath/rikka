@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use rikka_core::vk;
 
-use crate::{command_buffer::CommandPool, device::Device};
+use crate::factory::DeviceGuard;
 
 pub struct TimestampQueryPool {
-    device: Arc<Device>,
+    device: DeviceGuard,
 
     query_pool: vk::QueryPool,
 
@@ -16,7 +14,7 @@ pub struct TimestampQueryPool {
 }
 
 impl TimestampQueryPool {
-    pub fn new(device: Arc<Device>, time_queries_per_frame: u32) -> Result<Self> {
+    pub fn new(device: DeviceGuard, time_queries_per_frame: u32) -> Result<Self> {
         let pool_info = vk::QueryPoolCreateInfo::builder()
             .query_type(vk::QueryType::TIMESTAMP)
             .query_count(time_queries_per_frame * 2);
@@ -39,12 +37,12 @@ impl Drop for TimestampQueryPool {
 }
 
 pub struct PipelineStatsQueryPool {
-    device: Arc<Device>,
+    device: DeviceGuard,
     query_pool: vk::QueryPool,
 }
 
 impl PipelineStatsQueryPool {
-    pub fn new(device: Arc<Device>) -> Result<Self> {
+    pub fn new(device: DeviceGuard) -> Result<Self> {
         let pipeline_stats_flags = {
             use vk::QueryPipelineStatisticFlags as flags;
 

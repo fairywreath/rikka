@@ -13,12 +13,13 @@ pub struct Instance {
     instance: ash::Instance,
     debug_utils: DebugUtils,
     debug_utils_messenger: vk::DebugUtilsMessengerEXT,
-
-    physical_devices: Vec<PhysicalDevice>,
+    entry: ash::Entry,
 }
 
 impl Instance {
-    pub fn new(entry: &ash::Entry, display_handle: &dyn HasRawDisplayHandle) -> Result<Self> {
+    pub fn new(display_handle: &dyn HasRawDisplayHandle) -> Result<Self> {
+        let entry = unsafe { ash::Entry::load()? };
+
         // Create vulkan instance.
         let app_name = CString::new("Rikka RHIContext").unwrap();
         let app_info = vk::ApplicationInfo::builder()
@@ -66,15 +67,15 @@ impl Instance {
             )
             .pfn_user_callback(Some(vulkan_debug_utils_callback));
 
-        let debug_utils = DebugUtils::new(entry, &instance);
+        let debug_utils = DebugUtils::new(&entry, &instance);
         let debug_utils_messenger =
             unsafe { debug_utils.create_debug_utils_messenger(&debug_utils_info, None)? };
 
         Ok(Self {
+            entry,
             instance,
             debug_utils,
             debug_utils_messenger,
-            physical_devices: vec![],
         })
     }
 
@@ -82,21 +83,21 @@ impl Instance {
         &self.instance
     }
 
-    pub fn get_physical_devices(&mut self, surface: &Surface) -> Result<&Vec<PhysicalDevice>> {
-        if self.physical_devices.is_empty() {
-            let physical_devices = unsafe { self.instance.enumerate_physical_devices()? };
+    pub fn entry(&self) -> &ash::Entry {
+        &self.entry
+    }
 
-            let physical_devices = physical_devices
-                .into_iter()
-                .map(|phys_device| {
-                    PhysicalDevice::new_from_vulkan_handle(&self.instance, &surface, phys_device)
-                })
-                .collect::<Result<Vec<_>>>()?;
+    pub fn get_physical_devices(&self, surface: &Surface) -> Result<Vec<PhysicalDevice>> {
+        let physical_devices = unsafe { self.instance.enumerate_physical_devices()? };
 
-            self.physical_devices = physical_devices;
-        }
+        let physical_devices = physical_devices
+            .into_iter()
+            .map(|phys_device| {
+                PhysicalDevice::new_from_vulkan_handle(&self.instance, &surface, phys_device)
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        Ok(&self.physical_devices)
+        Ok(physical_devices)
     }
 }
 

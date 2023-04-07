@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 use rikka_core::vk;
 
-use crate::{buffer::Buffer, device::Device, image::Image, queue::*};
+use crate::{image::Image, queue::*};
 
 bitflags! {
     pub struct ResourceState : u32

@@ -1,12 +1,8 @@
-use std::{
-    mem::{align_of, size_of_val, swap},
-    ops::Deref,
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use gpu_allocator::{
     vulkan::{Allocation, AllocationCreateDesc, Allocator},
     MemoryLocation,
@@ -14,15 +10,8 @@ use gpu_allocator::{
 use rikka_core::vk;
 
 use crate::{
-    barriers::ResourceState,
-    command_buffer,
-    constants::INVALID_BINDLESS_TEXTURE_INDEX,
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    pipeline::*,
-    sampler::Sampler,
-    swapchain::Swapchain,
-    types::*,
+    barriers::ResourceState, constants::INVALID_BINDLESS_TEXTURE_INDEX, device::Device,
+    escape::Handle, factory::DeviceGuard, sampler::Sampler, swapchain::Swapchain,
 };
 
 pub struct ImageDesc {
@@ -36,7 +25,6 @@ pub struct ImageDesc {
     pub format: vk::Format,
     pub image_type: vk::ImageType,
     pub usage_flags: vk::ImageUsageFlags,
-    // name: String,
     memory_location: MemoryLocation,
 }
 
@@ -103,15 +91,16 @@ fn format_has_stencil(format: vk::Format) -> bool {
 
 // XXX: Need a first-class ImageView type as well. Can be useful for example the use cases of different image views for the same image
 pub struct Image {
-    device: Arc<Device>,
+    device: DeviceGuard,
+    allocator: Option<Arc<Mutex<Allocator>>>,
+    allocation: Option<Allocation>,
 
     raw: vk::Image,
     raw_view: vk::ImageView,
 
-    allocator: Option<Arc<Mutex<Allocator>>>,
-    allocation: Option<Allocation>,
-
+    // XXX: We do not actually track this and the images are imutable
     resource_state: ResourceState,
+    sampler: Option<Handle<Sampler>>,
 
     // XXX: This struct contains to much stuff...move/remove some of these?
     format: vk::Format,
@@ -120,18 +109,15 @@ pub struct Image {
     array_layers: u32,
     image_type: vk::ImageType,
 
-    // Image view info
     subresource_range: vk::ImageSubresourceRange,
 
-    sampler: Option<Arc<Sampler>>,
     owning: bool,
-
     bindless_index: u32,
 }
 
 impl Image {
-    pub(crate) fn new(
-        device: Arc<Device>,
+    pub(crate) unsafe fn create(
+        device: DeviceGuard,
         allocator: Arc<Mutex<Allocator>>,
         desc: ImageDesc,
     ) -> Result<Self> {
@@ -156,13 +142,11 @@ impl Image {
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED);
 
-        let raw = unsafe {
-            device
-                .raw()
-                .create_image(&create_info, None)
-                .context("Failed to create vulkan image")?
-        };
-        let requirements = unsafe { device.raw().get_image_memory_requirements(raw) };
+        let raw = device
+            .raw()
+            .create_image(&create_info, None)
+            .context("Failed to create vulkan image")?;
+        let requirements = device.raw().get_image_memory_requirements(raw);
 
         // XXX: Always GPU only (and use staging buffer to copy)?
         // let memory_location = MemoryLocation::GpuOnly;
@@ -174,11 +158,9 @@ impl Image {
             linear: true,
         })?;
 
-        unsafe {
-            device
-                .raw()
-                .bind_image_memory(raw, allocation.memory(), allocation.offset())?
-        };
+        device
+            .raw()
+            .bind_image_memory(raw, allocation.memory(), allocation.offset())?;
 
         let mut aspect_flags = vk::ImageAspectFlags::empty();
         if format_has_depth(desc.format) {
@@ -196,7 +178,7 @@ impl Image {
             .build();
 
         let raw_view = Self::create_vulkan_image_view(
-            device.as_ref(),
+            &device,
             ImageViewDesc {
                 image: raw,
                 view_type: vulkan_image_type_to_view_type(desc.image_type),
@@ -222,6 +204,20 @@ impl Image {
             owning: true,
             bindless_index: u32::MAX,
         })
+    }
+
+    pub(crate) unsafe fn destroy(mut self) {
+        if self.owning {
+            self.allocator
+                .clone()
+                .unwrap()
+                .lock()
+                .free(self.allocation.take().unwrap())
+                .unwrap();
+
+            self.device.raw().destroy_image(self.raw, None);
+            self.device.raw().destroy_image_view(self.raw_view, None);
+        }
     }
 
     pub(crate) fn from_swapchain(
@@ -267,21 +263,20 @@ impl Image {
         self.bindless_index
     }
 
-    fn create_vulkan_image_view(device: &Device, desc: ImageViewDesc) -> Result<vk::ImageView> {
+    unsafe fn create_vulkan_image_view(
+        device: &Device,
+        desc: ImageViewDesc,
+    ) -> Result<vk::ImageView> {
         let create_info = vk::ImageViewCreateInfo::builder()
             .image(desc.image)
             .view_type(desc.view_type)
             .format(desc.format)
             .subresource_range(desc.subresource_range);
 
-        let image_view = {
-            unsafe {
-                device
-                    .raw()
-                    .create_image_view(&create_info, None)
-                    .context("Failed to create vulkan image view")?
-            }
-        };
+        let image_view = device
+            .raw()
+            .create_image_view(&create_info, None)
+            .context("Failed to create vulkan image view")?;
 
         Ok(image_view)
     }
@@ -298,11 +293,11 @@ impl Image {
         self.sampler.is_some()
     }
 
-    pub fn linked_sampler(&self) -> Option<Arc<Sampler>> {
+    pub fn linked_sampler(&self) -> Option<Handle<Sampler>> {
         self.sampler.clone()
     }
 
-    pub fn set_linked_sampler(&mut self, sampler: Arc<Sampler>) {
+    pub fn set_linked_sampler(&mut self, sampler: Handle<Sampler>) {
         self.sampler = Some(sampler);
     }
 
@@ -336,24 +331,5 @@ impl Image {
 
     pub fn aspect_mask(&self) -> vk::ImageAspectFlags {
         self.subresource_range.aspect_mask
-    }
-}
-
-impl Drop for Image {
-    fn drop(&mut self) {
-        if self.owning {
-            // XXX: tf is this
-            self.allocator
-                .clone()
-                .unwrap()
-                .lock()
-                .free(self.allocation.take().unwrap())
-                .unwrap();
-
-            unsafe {
-                self.device.raw().destroy_image(self.raw, None);
-                self.device.raw().destroy_image_view(self.raw_view, None);
-            };
-        }
     }
 }

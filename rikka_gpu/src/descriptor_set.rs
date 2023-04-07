@@ -1,11 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 
 use rikka_core::vk;
 pub use rikka_shader::types::DescriptorBinding;
 
-use crate::{buffer::Buffer, constants, device::Device, image::Image, types::ResourceUsageType};
+use crate::{buffer::Buffer, constants, escape::*, factory::DeviceGuard, image::Image};
 
 pub struct DescriptorPoolDesc {
     pub pool_sizes: Vec<vk::DescriptorPoolSize>,
@@ -44,37 +44,31 @@ impl DescriptorPoolDesc {
 }
 
 pub struct DescriptorPool {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw: vk::DescriptorPool,
 }
 
 impl DescriptorPool {
-    pub fn new(device: Arc<Device>, desc: DescriptorPoolDesc) -> Result<Self> {
+    pub(crate) unsafe fn create(device: DeviceGuard, desc: DescriptorPoolDesc) -> Result<Self> {
         let create_info = vk::DescriptorPoolCreateInfo::builder()
             .flags(desc.flags)
             .max_sets(desc.max_sets)
             .pool_sizes(&desc.pool_sizes);
 
-        let raw = unsafe {
-            device
-                .raw()
-                .create_descriptor_pool(&create_info, None)
-                .context("Failed to create vulkan descriptor pool!")?
-        };
+        let raw = device
+            .raw()
+            .create_descriptor_pool(&create_info, None)
+            .context("Failed to create vulkan descriptor pool!")?;
 
         Ok(Self { device, raw })
     }
 
+    pub(crate) unsafe fn destroy(self) {
+        self.device.raw().destroy_descriptor_pool(self.raw, None);
+    }
+
     pub fn raw(&self) -> vk::DescriptorPool {
         self.raw
-    }
-}
-
-impl Drop for DescriptorPool {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.raw().destroy_descriptor_pool(self.raw, None);
-        }
     }
 }
 
@@ -123,9 +117,8 @@ impl DescriptorSetLayoutDesc {
 }
 
 pub struct DescriptorSetLayout {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw: vk::DescriptorSetLayout,
-    vulkan_bindings: Vec<vk::DescriptorSetLayoutBinding>,
     bindings: Vec<DescriptorBinding>,
     binding_index_to_array_index: [usize; constants::MAX_SHADER_BINDING_INDEX as usize],
     bindless: bool,
@@ -140,9 +133,10 @@ fn can_descriptor_type_be_bindless(descriptor_type: vk::DescriptorType) -> bool 
 }
 
 impl DescriptorSetLayout {
-    pub fn new(device: Arc<Device>, desc: DescriptorSetLayoutDesc) -> Result<Self> {
-        // XXX: Need to check binding input description is valid?
-
+    pub(crate) unsafe fn create(
+        device: DeviceGuard,
+        desc: DescriptorSetLayoutDesc,
+    ) -> Result<Self> {
         let max_shader_binding_index = desc
             .bindings
             .iter()
@@ -208,31 +202,32 @@ impl DescriptorSetLayout {
                     .push_next(&mut binding_flags_info)
                     .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL);
 
-                unsafe {
-                    device
-                        .raw()
-                        .create_descriptor_set_layout(&create_info, None)
-                        .context("Failed to create vulkan descriptor set layout")?
-                }
+                device
+                    .raw()
+                    .create_descriptor_set_layout(&create_info, None)
+                    .context("Failed to create vulkan descriptor set layout")?
             } else {
-                unsafe {
-                    device
-                        .raw()
-                        .create_descriptor_set_layout(&create_info, None)
-                        .context("Failed to create vulkan descriptor set layout")?
-                }
+                device
+                    .raw()
+                    .create_descriptor_set_layout(&create_info, None)
+                    .context("Failed to create vulkan descriptor set layout")?
             }
         };
 
         Ok(Self {
             device,
             raw,
-            vulkan_bindings,
             bindings: desc.bindings,
             binding_index_to_array_index,
             bindless: desc.bindless,
             dynamic: desc.dynamic,
         })
+    }
+
+    pub(crate) unsafe fn destroy(self) {
+        self.device
+            .raw()
+            .destroy_descriptor_set_layout(self.raw, None);
     }
 
     pub fn raw(&self) -> vk::DescriptorSetLayout {
@@ -261,16 +256,6 @@ impl DescriptorSetLayout {
     }
 }
 
-impl Drop for DescriptorSetLayout {
-    fn drop(&mut self) {
-        unsafe {
-            self.device
-                .raw()
-                .destroy_descriptor_set_layout(self.raw, None);
-        };
-    }
-}
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum DescriptorSetBindingResourceType {
     Buffer,
@@ -282,15 +267,15 @@ pub struct DescriptorSetBindingResource {
     resource_type: DescriptorSetBindingResourceType,
 
     // XXX: Need strong references for these?
-    pub buffer: Option<Arc<Buffer>>,
-    pub image: Option<Arc<Image>>,
+    pub buffer: Option<Handle<Buffer>>,
+    pub image: Option<Handle<Image>>,
 
     pub count: u32,
     pub binding_index: u32,
 }
 
 impl DescriptorSetBindingResource {
-    pub fn buffer(buffer: Arc<Buffer>, binding_index: u32) -> Self {
+    pub fn buffer(buffer: Handle<Buffer>, binding_index: u32) -> Self {
         Self {
             resource_type: DescriptorSetBindingResourceType::Buffer,
             buffer: Some(buffer),
@@ -300,7 +285,7 @@ impl DescriptorSetBindingResource {
         }
     }
 
-    pub fn image(image: Arc<Image>, binding_index: u32) -> Self {
+    pub fn image(image: Handle<Image>, binding_index: u32) -> Self {
         Self {
             resource_type: DescriptorSetBindingResourceType::ImageSampler,
             buffer: None,
@@ -321,13 +306,13 @@ pub struct DescriptorSetDesc {
 
     // XXX: Need strong reference always?
     pub pool: Option<Arc<DescriptorPool>>,
-    pub layout: Arc<DescriptorSetLayout>,
+    pub layout: Handle<DescriptorSetLayout>,
     // XXX: Properly support bindless images
     // pub bindless: false,
 }
 
 impl DescriptorSetDesc {
-    pub fn new(layout: Arc<DescriptorSetLayout>) -> Self {
+    pub fn new(layout: Handle<DescriptorSetLayout>) -> Self {
         Self {
             layout,
             pool: None,
@@ -354,17 +339,17 @@ pub struct DescriptorSet {
     // XXX: Might be better/easier to have separate arrays for each resource type?
     //      Probably do not need to hold a strong reference to bindinh resources
     // binding_resources: Vec<DescriptorSetBindingResource>,
-    device: Arc<Device>,
+    device: DeviceGuard,
 
     // XXX: Need strong references for these?
     pool: Arc<DescriptorPool>,
-    layout: Arc<DescriptorSetLayout>,
+    layout: Handle<DescriptorSetLayout>,
     // XXX: Add support for multiple descriptor sets?
     // set_index: u32,
 }
 
 impl DescriptorSet {
-    pub fn new(device: Arc<Device>, desc: DescriptorSetDesc) -> Result<Self> {
+    pub fn new(device: DeviceGuard, desc: DescriptorSetDesc) -> Result<Self> {
         let pool = desc.pool.clone().unwrap();
 
         let set_layouts = [desc.layout.raw()];

@@ -16,8 +16,9 @@ pub mod constants;
 pub mod transfer;
 
 mod device;
+mod escape;
+mod factory;
 mod frame;
-mod handle;
 mod instance;
 mod physical_device;
 mod query;

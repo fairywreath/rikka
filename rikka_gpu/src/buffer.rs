@@ -1,10 +1,9 @@
 use std::{
     mem::{align_of, size_of_val},
-    ops::Deref,
     sync::Arc,
 };
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use parking_lot::Mutex;
 
 use gpu_allocator::{
@@ -14,14 +13,7 @@ use gpu_allocator::{
 
 use rikka_core::{ash, vk};
 
-use crate::{
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    pipeline::*,
-    types::*,
-};
+use crate::{factory::DeviceGuard, types::*};
 
 pub enum BufferLocation {
     GpuOnly,
@@ -68,10 +60,12 @@ impl BufferDesc {
 }
 
 pub struct Buffer {
-    device: Arc<Device>,
+    device: DeviceGuard,
+    // XXX: Remove this. Allocator can be obtianed from DeviceGuard
     allocator: Arc<Mutex<Allocator>>,
+
     raw: vk::Buffer,
-    allocation: Option<Allocation>,
+    allocation: Allocation,
     desc: BufferDesc,
     //  XXX: Are these needed?
     // global_offset: u32,
@@ -82,8 +76,8 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub(crate) fn new(
-        device: Arc<Device>,
+    pub(crate) unsafe fn create(
+        device: DeviceGuard,
         allocator: Arc<Mutex<Allocator>>,
         desc: BufferDesc,
     ) -> Result<Self> {
@@ -95,8 +89,8 @@ impl Buffer {
                     | vk::BufferUsageFlags::TRANSFER_DST,
             );
 
-        let raw = unsafe { device.raw().create_buffer(&create_info, None)? };
-        let requirements = unsafe { device.raw().get_buffer_memory_requirements(raw) };
+        let raw = device.raw().create_buffer(&create_info, None)?;
+        let requirements = device.raw().get_buffer_memory_requirements(raw);
 
         let location = {
             if desc.device_only {
@@ -113,30 +107,27 @@ impl Buffer {
             linear: true,
         })?;
 
-        unsafe {
-            device
-                .raw()
-                .bind_buffer_memory(raw, allocation.memory(), allocation.offset())?
-        };
+        device
+            .raw()
+            .bind_buffer_memory(raw, allocation.memory(), allocation.offset())?;
 
         Ok(Self {
             device,
             allocator,
             raw,
-            allocation: Some(allocation),
+            allocation,
             desc,
         })
     }
 
+    pub(crate) unsafe fn destroy(self) {
+        self.device.raw().destroy_buffer(self.raw, None);
+        self.allocator.lock().free(self.allocation).unwrap();
+    }
+
     pub fn copy_data_to_buffer<T: Copy>(&self, data: &[T]) -> Result<()> {
         unsafe {
-            let data_ptr = self
-                .allocation
-                .as_ref()
-                .unwrap()
-                .mapped_ptr()
-                .unwrap()
-                .as_ptr();
+            let data_ptr = self.allocation.mapped_ptr().unwrap().as_ptr();
 
             let mut align =
                 ash::util::Align::new(data_ptr, align_of::<T>() as _, size_of_val(data) as _);
@@ -161,22 +152,5 @@ impl Buffer {
 
     pub fn resource_usage_type(&self) -> ResourceUsageType {
         self.desc.resource_usage
-    }
-}
-
-impl Drop for Buffer {
-    fn drop(&mut self) {
-        unsafe { self.device.raw().destroy_buffer(self.raw, None) };
-        self.allocator
-            .lock()
-            .free(self.allocation.take().unwrap())
-            .unwrap();
-    }
-}
-
-impl Deref for Buffer {
-    type Target = vk::Buffer;
-    fn deref(&self) -> &Self::Target {
-        &self.raw
     }
 }

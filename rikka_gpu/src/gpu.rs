@@ -1,15 +1,13 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender};
-use parking_lot::Mutex;
 
-use gpu_allocator::{
-    vulkan::{Allocator, AllocatorCreateDesc},
-    AllocatorDebugSettings,
-};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rikka_core::{ash, vk};
+use rikka_core::vk;
 
 use crate::{
     barriers::*,
@@ -18,18 +16,18 @@ use crate::{
     constants::{self, INVALID_BINDLESS_TEXTURE_INDEX},
     descriptor_set::*,
     device::Device,
+    escape::*,
+    factory::*,
     frame::*,
     image::ImageDesc,
     image::*,
     instance::Instance,
-    physical_device::PhysicalDevice,
     pipeline::*,
-    queue::{Queue, QueueFamily, QueueFamilyIndices},
+    queue::{Queue, QueueType},
     sampler::*,
     shader_state::*,
     surface::Surface,
     swapchain::{Swapchain, SwapchainDesc},
-    synchronization::{Semaphore, SemaphoreType},
     transfer::TransferManager,
     types::ImageResourceUpdate,
 };
@@ -39,8 +37,8 @@ pub struct Gpu {
     // transfer_manager: TransferManager,
 
     // XXX: Remove this once a frame graph is implemented
-    shader_read_image_sender: Sender<Arc<Image>>,
-    shader_read_image_receiver: Receiver<Arc<Image>>,
+    shader_read_image_sender: Sender<Handle<Image>>,
+    shader_read_image_receiver: Receiver<Handle<Image>>,
 
     // XXX: Have an asynchronous transfer handler
     transfer_command_pool: CommandPool,
@@ -53,15 +51,13 @@ pub struct Gpu {
 
     // XXX: Handle image destruction for bindless images
     // bindless_image_returned_indices: Vec<u32>,
-    bindless_image_new_index: u32,
+    bindless_image_new_index: AtomicU32,
 
     bindless_descriptor_set: Arc<DescriptorSet>,
-    bindless_descriptor_set_layout: Arc<DescriptorSetLayout>,
+    bindless_descriptor_set_layout: Handle<DescriptorSetLayout>,
     bindless_descriptor_pool: Arc<DescriptorPool>,
 
-    default_sampler: Arc<Sampler>,
-
-    allocator: Arc<Mutex<Allocator>>,
+    default_sampler: Handle<Sampler>,
 
     swapchain: Swapchain,
 
@@ -71,20 +67,13 @@ pub struct Gpu {
     frame_thread_pools_manager: FrameThreadPoolsManager,
     frame_synchronization_manager: FrameSynchronizationManager,
 
-    physical_device: PhysicalDevice,
-    device: Arc<Device>,
-
-    queue_families: QueueFamilyIndices,
-
     graphics_queue: Queue,
     transfer_queue: Queue,
     present_queue: Queue,
     compute_queue: Queue,
 
-    surface: Surface,
-    instance: Instance,
-
-    entry: ash::Entry,
+    factory: Factory,
+    device: DeviceGuard,
 }
 
 pub struct GpuDesc<'a> {
@@ -106,61 +95,30 @@ impl<'a> GpuDesc<'a> {
 
 impl Gpu {
     pub fn new(desc: GpuDesc) -> Result<Self> {
-        let entry = unsafe { ash::Entry::load()? };
-        let mut instance = Instance::new(&entry, &desc.display_handle)?;
-        let surface = Surface::new(&entry, &instance, &desc.window_handle, &desc.display_handle)?;
+        // Core vulkan objects
+        let instance = Instance::new(&desc.display_handle)?;
+        let surface = Surface::new(&instance, desc.window_handle, desc.display_handle)?;
+        let device = Device::new(instance, surface)?;
 
-        let physical_devices = instance.get_physical_devices(&surface)?;
-        let physical_device = select_suitable_physical_device(&physical_devices)?;
+        // Resource guards/wrappers
+        let device = DeviceGuard::new(device);
+        let factory = Factory::new(device.clone());
 
-        log::info!("GPU name: {}", physical_device.name);
-
-        let queue_families = select_queue_family_indices(&physical_device);
-
-        log::info!("Graphics family: {}", queue_families.graphics.index());
-        log::info!("Present family: {}", queue_families.present.index());
-        log::info!("Compute family: {}", queue_families.compute.index());
-        log::info!("Transfer family: {}", queue_families.transfer.index());
-
-        let device = Arc::new(Device::new(
-            &instance,
-            &physical_device,
-            &[
-                queue_families.graphics,
-                queue_families.compute,
-                queue_families.transfer,
-                queue_families.compute,
-            ],
-        )?);
-
-        let graphics_queue = device.get_queue(queue_families.graphics, 0);
-        let present_queue = device.get_queue(queue_families.present, 0);
-        let compute_queue = device.get_queue(queue_families.compute, 0);
-        let transfer_queue = device.get_queue(queue_families.transfer, 0);
-
-        let allocator = Allocator::new(&AllocatorCreateDesc {
-            instance: instance.raw().clone(),
-            device: device.raw().clone(),
-            physical_device: physical_device.raw(),
-            debug_settings: AllocatorDebugSettings {
-                log_memory_information: true,
-                log_leaks_on_shutdown: true,
-                ..Default::default()
-            },
-            buffer_device_address: true,
-        })?;
-        let allocator = Arc::new(Mutex::new(allocator));
+        let graphics_queue = device.get_queue(QueueType::Graphics, 0);
+        let transfer_queue = device.get_queue(QueueType::Transfer, 0);
+        let compute_queue = device.get_queue(QueueType::Compute, 0);
+        let present_queue = device.get_queue(QueueType::Graphics, 0);
 
         let swapchain = Swapchain::new(
-            &instance,
-            &surface,
-            &physical_device,
-            &device,
+            device.instance(),
+            device.surface(),
+            device.physical_device(),
+            device.clone(),
             SwapchainDesc::new(
+                u32::MAX, // Set dimensions based on information obtained from surface
                 u32::MAX,
-                u32::MAX,
-                queue_families.graphics.index(),
-                queue_families.present.index(),
+                device.queue_family(QueueType::Graphics).index(),
+                device.queue_family(QueueType::Graphics).index(),
             ),
         )?;
 
@@ -179,72 +137,78 @@ impl Gpu {
 
         let frame_synchronization_manager = FrameSynchronizationManager::new(device.clone())?;
 
-        let global_descriptor_pool = DescriptorPool::new(
-            device.clone(),
-            DescriptorPoolDesc::new()
-                .set_max_sets(constants::GLOBAL_DESCRIPTOR_POOL_MAX_SETS)
-                .add_pool_size(
-                    vk::DescriptorType::SAMPLER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::SAMPLED_IMAGE,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::STORAGE_IMAGE,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::UNIFORM_BUFFER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::STORAGE_BUFFER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::STORAGE_TEXEL_BUFFER,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::INPUT_ATTACHMENT,
-                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                ),
-        )?;
+        // XXX: These are not safe and the guards do nnot work against these: move the descriptor pools inside the guard(same applies for command buffers)
 
-        let bindless_descriptor_pool = DescriptorPool::new(
-            device.clone(),
-            DescriptorPoolDesc::new()
-                .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-                // Only 1 set for all bindless images?
-                // .set_max_sets(1)
-                .set_max_sets(constants::MAX_NUM_BINDLESS_RESOURCECS * 2)
-                .add_pool_size(
-                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    constants::MAX_NUM_BINDLESS_RESOURCECS,
-                )
-                .add_pool_size(
-                    vk::DescriptorType::STORAGE_IMAGE,
-                    constants::MAX_NUM_BINDLESS_RESOURCECS,
-                ),
-        )?;
+        let global_descriptor_pool = unsafe {
+            DescriptorPool::create(
+                device.clone(),
+                DescriptorPoolDesc::new()
+                    .set_max_sets(constants::GLOBAL_DESCRIPTOR_POOL_MAX_SETS)
+                    .add_pool_size(
+                        vk::DescriptorType::SAMPLER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::SAMPLED_IMAGE,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::STORAGE_IMAGE,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::UNIFORM_BUFFER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::STORAGE_BUFFER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::STORAGE_TEXEL_BUFFER,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::INPUT_ATTACHMENT,
+                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                    ),
+            )?
+        };
+
+        let bindless_descriptor_pool = unsafe {
+            DescriptorPool::create(
+                device.clone(),
+                DescriptorPoolDesc::new()
+                    .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+                    // Only 1 set for all bindless images?
+                    // .set_max_sets(1)
+                    .set_max_sets(constants::MAX_NUM_BINDLESS_RESOURCECS * 2)
+                    .add_pool_size(
+                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                        constants::MAX_NUM_BINDLESS_RESOURCECS,
+                    )
+                    .add_pool_size(
+                        vk::DescriptorType::STORAGE_IMAGE,
+                        constants::MAX_NUM_BINDLESS_RESOURCECS,
+                    ),
+            )?
+        };
         let bindless_descriptor_pool = Arc::new(bindless_descriptor_pool);
 
         let bindless_descriptor_set_layout_desc = DescriptorSetLayoutDesc::new()
@@ -263,9 +227,9 @@ impl Gpu {
                 vk::ShaderStageFlags::FRAGMENT,
             ));
 
-        let bindless_descriptor_set_layout =
-            DescriptorSetLayout::new(device.clone(), bindless_descriptor_set_layout_desc)?;
-        let bindless_descriptor_set_layout = Arc::new(bindless_descriptor_set_layout);
+        let bindless_descriptor_set_layout = Handle::from(
+            factory.create_descriptor_set_layout(bindless_descriptor_set_layout_desc)?,
+        );
 
         let bindless_descriptor_set = DescriptorSet::new(
             device.clone(),
@@ -274,7 +238,7 @@ impl Gpu {
         )?;
         let bindless_descriptor_set = Arc::new(bindless_descriptor_set);
 
-        let default_sampler = Arc::new(Sampler::new(device.clone(), SamplerDesc::new())?);
+        let default_sampler = factory.create_sampler(SamplerDesc::new())?.into();
 
         // XXX: Actually use transfer command queue for this, currently use graphics since need different queues for resource state transitions
         let transfer_command_pool =
@@ -290,19 +254,14 @@ impl Gpu {
         // )?;
 
         Ok(Self {
-            surface,
-            instance,
-            entry,
-            queue_families,
             device,
-            physical_device,
+            factory,
 
             graphics_queue,
             present_queue,
             compute_queue,
             transfer_queue,
 
-            allocator,
             swapchain,
 
             queued_command_buffers: Vec::new(),
@@ -322,7 +281,7 @@ impl Gpu {
 
             default_sampler,
 
-            bindless_image_new_index: 0,
+            bindless_image_new_index: AtomicU32::new(0),
 
             shader_read_image_sender,
             shader_read_image_receiver,
@@ -330,36 +289,43 @@ impl Gpu {
         })
     }
 
-    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Buffer> {
-        Buffer::new(self.device.clone(), self.allocator.clone(), desc)
+    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Escape<Buffer>> {
+        self.factory.create_buffer(desc)
     }
 
-    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Image> {
-        let mut image = Image::new(self.device.clone(), self.allocator.clone(), desc)?;
+    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Escape<Image>> {
+        let mut image = self.factory.create_image(desc)?;
+        image.set_bindless_index(
+            self.bindless_image_new_index
+                .fetch_add(1, Ordering::Relaxed),
+        );
 
-        image.set_bindless_index(self.bindless_image_new_index);
-        self.bindless_image_new_index += 1;
+        // XXX: Add image bindless image descriptor update here
 
         Ok(image)
     }
 
-    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Sampler> {
-        Sampler::new(self.device.clone(), desc)
+    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Escape<Sampler>> {
+        self.factory.create_sampler(desc)
     }
 
+    // XXX: Should we expose this?
     pub fn create_shader_state(&self, desc: ShaderStateDesc) -> Result<ShaderState> {
         ShaderState::new(self.device.clone(), desc)
     }
 
-    pub fn create_graphics_pipeline(&self, desc: GraphicsPipelineDesc) -> Result<GraphicsPipeline> {
-        GraphicsPipeline::new(self.device.clone(), desc)
+    pub fn create_graphics_pipeline(
+        &self,
+        desc: GraphicsPipelineDesc,
+    ) -> Result<Escape<GraphicsPipeline>> {
+        self.factory.create_graphics_pipeline(desc)
     }
 
     pub fn create_descriptor_set_layout(
         &self,
         desc: DescriptorSetLayoutDesc,
-    ) -> Result<DescriptorSetLayout> {
-        DescriptorSetLayout::new(self.device.clone(), desc)
+    ) -> Result<Escape<DescriptorSetLayout>> {
+        self.factory.create_descriptor_set_layout(desc)
     }
 
     pub fn create_descriptor_set(&self, desc: DescriptorSetDesc) -> Result<DescriptorSet> {
@@ -422,10 +388,10 @@ impl Gpu {
         self.swapchain = self
             .swapchain
             .recreate(
-                &self.instance,
-                &self.surface,
-                &self.physical_device,
-                &self.device,
+                self.device.instance(),
+                self.device.surface(),
+                self.device.physical_device(),
+                self.device.clone(),
             )
             .with_context(|| format!("recreate_swapchain: Failed to create new swapchain!"))?;
 
@@ -439,10 +405,10 @@ impl Gpu {
 
     pub fn set_present_mode(&mut self, present_mode: vk::PresentModeKHR) -> Result<()> {
         self.swapchain = self.swapchain.recreate_present_mode(
-            &self.instance,
-            &self.surface,
-            &self.physical_device,
-            &self.device,
+            self.device.instance(),
+            self.device.surface(),
+            self.device.physical_device(),
+            self.device.clone(),
             present_mode,
         )?;
         Ok(())
@@ -469,7 +435,8 @@ impl Gpu {
 
         self.update_bindless_images();
 
-        // Destroy deletion queue resources?
+        // XXX: Technically it MAY not be safe to destroy resource here. Need a proper resource tracker management system(don't wanna write GL though ugh!);
+        self.device.cleanup_resources();
 
         Ok(present_result)
     }
@@ -478,6 +445,7 @@ impl Gpu {
         self.frame_synchronization_manager.current_frame_index()
     }
 
+    // XXX: Do not need to return a strong ref here...
     pub fn current_command_buffer(&mut self, thread_index: u32) -> Result<Arc<CommandBuffer>> {
         let command_buffer = self.command_buffer_manager.command_buffer(
             self.frame_synchronization_manager.current_frame_index() as u32,
@@ -552,7 +520,7 @@ impl Gpu {
     pub fn copy_data_to_image<T: Copy>(
         // For command buffer manager mut access
         &mut self,
-        image: Arc<Image>,
+        image: Handle<Image>,
         staging_buffer: &Buffer,
         data: &[T],
     ) -> Result<()> {
@@ -571,7 +539,7 @@ impl Gpu {
             false,
         );
 
-        command_buffer.upload_data_to_image(image.as_ref(), staging_buffer, data)?;
+        command_buffer.upload_data_to_image(&image, staging_buffer, data)?;
         self.graphics_queue.submit(&[&command_buffer], &[], &[])?;
 
         self.wait_idle();
@@ -620,7 +588,7 @@ impl Gpu {
     }
 
     // XXX: Properly integrate this somewhere internally
-    pub fn bindless_descriptor_set_layout(&self) -> &Arc<DescriptorSetLayout> {
+    pub fn bindless_descriptor_set_layout(&self) -> &Handle<DescriptorSetLayout> {
         &self.bindless_descriptor_set_layout
     }
 
@@ -681,7 +649,7 @@ impl Gpu {
         // }
     }
 
-    pub fn new_shader_read_image_sender(&self) -> Sender<Arc<Image>> {
+    pub fn new_shader_read_image_sender(&self) -> Sender<Handle<Image>> {
         self.shader_read_image_sender.clone()
     }
 
@@ -699,7 +667,7 @@ impl Gpu {
             let mut barriers = Barriers::new();
             for image in &images_to_transition {
                 barriers = barriers.add_image(
-                    image.as_ref(),
+                    &image,
                     ResourceState::COPY_DESTINATION,
                     ResourceState::SHADER_RESOURCE,
                 );
@@ -709,15 +677,6 @@ impl Gpu {
             command_buffer.end()?;
 
             self.queue_graphics_command_buffer(command_buffer);
-        }
-
-        // Bind after update
-        for image in images_to_transition.drain(..) {
-            self.bindless_images_to_update.push(ImageResourceUpdate {
-                frame: 0, // Not used
-                image: Some(image),
-                sampler: None,
-            })
         }
 
         images_to_transition.clear();
@@ -733,9 +692,9 @@ impl Gpu {
     pub fn new_transfer_manager(&self) -> Result<TransferManager> {
         TransferManager::new(
             self.device.clone(),
+            &self.factory,
             self.transfer_queue.clone(),
             self.graphics_queue.clone(),
-            self.allocator.clone(),
             self.shader_read_image_sender.clone(),
         )
     }
@@ -751,47 +710,5 @@ impl Drop for Gpu {
         }
 
         log::info!("GPU dropped");
-    }
-}
-
-fn select_suitable_physical_device(devices: &[PhysicalDevice]) -> Result<PhysicalDevice> {
-    // XXX TODO: Check required extensions and queue support
-
-    let device = devices
-        .iter()
-        .find(|device| device.device_type == vk::PhysicalDeviceType::DISCRETE_GPU)
-        .ok_or_else(|| anyhow::anyhow!("Could not find suitable GPU!"))?;
-
-    Ok(device.clone())
-}
-
-fn select_queue_family_indices(device: &PhysicalDevice) -> QueueFamilyIndices {
-    let mut graphics = None;
-    let mut present = None;
-    let mut compute = None;
-    let mut transfer = None;
-
-    // 1 graphics + present family, 1 compute family and 1 transfer only family
-    for family in device
-        .queue_families
-        .iter()
-        .filter(|family| family.queue_count() > 0)
-    {
-        if family.supports_graphics() && graphics.is_none() {
-            graphics = Some(*family);
-            assert!(family.supports_present());
-            present = Some(*family);
-        } else if family.supports_compute() && compute.is_none() {
-            compute = Some(*family);
-        } else if family.supports_transfer() && !family.supports_compute() && transfer.is_none() {
-            transfer = Some(*family);
-        }
-    }
-
-    QueueFamilyIndices {
-        graphics: graphics.unwrap(),
-        present: present.unwrap(),
-        compute: compute.unwrap(),
-        transfer: transfer.unwrap(),
     }
 }

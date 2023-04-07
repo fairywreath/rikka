@@ -1,17 +1,11 @@
-use std::{any, ffi::CString, str::FromStr, sync::Arc};
+use std::{ffi::CString, str::FromStr};
 
 use anyhow::{Context, Result};
 
 use rikka_core::{ash, vk};
 use rikka_shader::{compiler, reflect::*, types::*};
 
-use crate::{
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    types::*,
-};
+use crate::{device::Device, factory::DeviceGuard};
 
 pub use rikka_shader::types::ShaderStageType;
 
@@ -73,7 +67,7 @@ impl ShaderStateDesc {
 }
 
 pub struct ShaderState {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw_stages: Vec<vk::PipelineShaderStageCreateInfo>,
 
     // XXX: Remove this hack and add entry point when creating the actual pipeline itself.
@@ -83,7 +77,7 @@ pub struct ShaderState {
 }
 
 impl ShaderState {
-    pub fn new(device: Arc<Device>, desc: ShaderStateDesc) -> Result<Self> {
+    pub fn new(device: DeviceGuard, desc: ShaderStateDesc) -> Result<Self> {
         if desc.stages.is_empty() {
             return Err(anyhow::anyhow!("Shader stages from description is empty!"));
         }
@@ -95,7 +89,7 @@ impl ShaderState {
 
         for stage in &desc.stages {
             let (shader_module, reflection) =
-                unsafe { Self::create_shader_module(device.as_ref(), stage)? };
+                unsafe { Self::create_shader_module(&device, stage)? };
 
             raw_stages.push(
                 vk::PipelineShaderStageCreateInfo::builder()
@@ -182,6 +176,6 @@ impl ShaderState {
 
 impl Drop for ShaderState {
     fn drop(&mut self) {
-        unsafe { Self::destroy_shader_modules(self.device.as_ref(), &self.raw_stages) };
+        unsafe { Self::destroy_shader_modules(&self.device, &self.raw_stages) };
     }
 }

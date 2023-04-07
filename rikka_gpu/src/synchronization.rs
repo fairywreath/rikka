@@ -1,9 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use anyhow::Result;
 use rikka_core::vk;
 
-use crate::device::Device;
+use crate::factory::DeviceGuard;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SemaphoreType {
@@ -12,14 +12,14 @@ pub enum SemaphoreType {
 }
 
 pub struct Semaphore {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw: vk::Semaphore,
 
     semaphore_type: SemaphoreType,
 }
 
 impl Semaphore {
-    pub fn new(device: Arc<Device>, semaphore_type: SemaphoreType) -> Result<Self> {
+    pub fn new(device: DeviceGuard, semaphore_type: SemaphoreType) -> Result<Self> {
         let semaphore_info = vk::SemaphoreCreateInfo::builder();
 
         let mut semaphore_type_info =

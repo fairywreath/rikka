@@ -1,24 +1,7 @@
-use std::{
-    mem::{align_of, size_of_val},
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
-
-use anyhow::{Context, Error, Result};
-use gpu_allocator::{
-    vulkan::{Allocation, AllocationCreateDesc, Allocator},
-    MemoryLocation,
-};
+use anyhow::{Context, Result};
 use rikka_core::vk;
 
-use crate::{
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    pipeline::*,
-    types::*,
-};
+use crate::factory::DeviceGuard;
 
 pub struct SamplerDesc {
     pub min_filter: vk::Filter,
@@ -55,13 +38,13 @@ impl SamplerDesc {
 }
 
 pub struct Sampler {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw: vk::Sampler,
     desc: SamplerDesc,
 }
 
 impl Sampler {
-    pub fn new(device: Arc<Device>, desc: SamplerDesc) -> Result<Sampler> {
+    pub(crate) unsafe fn create(device: DeviceGuard, desc: SamplerDesc) -> Result<Sampler> {
         let mut create_info = vk::SamplerCreateInfo::builder()
             .min_filter(desc.min_filter)
             .mag_filter(desc.mag_filter)
@@ -84,32 +67,19 @@ impl Sampler {
             create_info = create_info.push_next(&mut sampler_reduction_info);
         }
 
-        let raw = unsafe {
-            device
-                .raw()
-                .create_sampler(&create_info, None)
-                .with_context(|| format!("Failed to create sampler!"))?
-        };
+        let raw = device
+            .raw()
+            .create_sampler(&create_info, None)
+            .with_context(|| format!("Failed to create sampler!"))?;
 
         Ok(Self { device, raw, desc })
     }
 
+    pub(crate) unsafe fn destroy(self) {
+        self.device.raw().destroy_sampler(self.raw, None);
+    }
+
     pub fn raw(&self) -> vk::Sampler {
         self.raw
-    }
-}
-
-impl Drop for Sampler {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.raw().destroy_sampler(self.raw, None);
-        }
-    }
-}
-
-impl Deref for Sampler {
-    type Target = vk::Sampler;
-    fn deref(&self) -> &Self::Target {
-        &self.raw
     }
 }

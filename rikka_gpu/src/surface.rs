@@ -1,10 +1,7 @@
 use anyhow::Result;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use rikka_core::{
-    ash::{self, extensions::khr},
-    vk,
-};
+use rikka_core::{ash::extensions::khr, vk};
 
 use crate::instance::Instance;
 
@@ -15,16 +12,15 @@ pub struct Surface {
 
 impl Surface {
     pub fn new(
-        entry: &ash::Entry,
         instance: &Instance,
         window_handle: &dyn HasRawWindowHandle,
         display_handle: &dyn HasRawDisplayHandle,
     ) -> Result<Self> {
-        let ash_surface = khr::Surface::new(entry, &instance.raw());
+        let ash_surface = khr::Surface::new(instance.entry(), instance.raw());
         let vulkan_surface = unsafe {
             ash_window::create_surface(
-                entry,
-                &instance.raw(),
+                instance.entry(),
+                instance.raw(),
                 display_handle.raw_display_handle(),
                 window_handle.raw_window_handle(),
                 None,

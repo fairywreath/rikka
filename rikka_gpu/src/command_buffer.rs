@@ -1,32 +1,20 @@
-use std::{
-    mem::swap,
-    sync::{Arc, Mutex, Weak},
-};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use rikka_core::vk::{self, RenderingAttachmentInfo};
+use rikka_core::vk;
 
 use crate::{
-    barriers::*,
-    buffer::*,
-    command_buffer,
-    constants::{self, NUM_COMMAND_BUFFERS_PER_THREAD},
-    descriptor_set::DescriptorSet,
-    device::Device,
-    frame::{self, FrameThreadPoolsManager},
-    image::*,
-    pipeline::*,
-    swapchain::Swapchain,
-    types::*,
+    barriers::*, buffer::*, constants, descriptor_set::DescriptorSet, device::Device,
+    factory::DeviceGuard, frame::FrameThreadPoolsManager, image::*, pipeline::*, types::*,
 };
 
 pub struct CommandPool {
     raw: vk::CommandPool,
-    device: Arc<Device>,
+    device: DeviceGuard,
 }
 
 impl CommandPool {
-    pub fn new(device: Arc<Device>, queue_family_index: u32) -> Result<Self> {
+    pub fn new(device: DeviceGuard, queue_family_index: u32) -> Result<Self> {
         let command_pool_info =
             vk::CommandPoolCreateInfo::builder().queue_family_index(queue_family_index);
 
@@ -85,7 +73,7 @@ impl Drop for CommandPool {
     }
 }
 pub struct CommandBufferManager {
-    device: Arc<Device>,
+    device: DeviceGuard,
 
     command_buffers: Vec<Arc<CommandBuffer>>,
     secondary_command_buffers: Vec<Arc<CommandBuffer>>,
@@ -103,7 +91,7 @@ pub struct CommandBufferManager {
 
 impl CommandBufferManager {
     pub fn new(
-        device: Arc<Device>,
+        device: DeviceGuard,
         frame_thread_pools_manager: &FrameThreadPoolsManager,
     ) -> Result<Self> {
         let num_frames = constants::MAX_FRAMES;
@@ -287,7 +275,7 @@ pub struct CommandBufferMetaData {
 }
 
 pub struct CommandBuffer {
-    device: Arc<Device>,
+    device: DeviceGuard,
     raw: vk::CommandBuffer,
 
     // pub(crate) is_recording: bool,
@@ -301,7 +289,7 @@ pub struct CommandBuffer {
 
 impl CommandBuffer {
     pub(crate) fn new(
-        device: Arc<Device>,
+        device: DeviceGuard,
         command_buffer: vk::CommandBuffer,
         meta_data: CommandBufferMetaData,
         is_secondary: bool,

@@ -1,43 +1,26 @@
-use std::{
-    mem::{align_of, size_of_val, swap},
-    ops::Deref,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use crossbeam_channel::{Receiver, Sender};
-use parking_lot::Mutex;
 
-use anyhow::{Context, Error, Result};
-use gpu_allocator::{
-    vulkan::{Allocation, AllocationCreateDesc, Allocator},
-    MemoryLocation,
-};
+use anyhow::Result;
 use rikka_core::vk;
 
 use crate::{
-    barriers::*,
-    buffer::*,
-    command_buffer::*,
-    constants,
-    device::Device,
-    gpu::Gpu,
-    image::Image,
-    queue::{Queue, SemaphoreSubmitInfo},
-    synchronization::*,
-    types::ImageResourceUpdate,
+    barriers::*, buffer::*, command_buffer::*, constants, escape::*, factory::*, image::Image,
+    queue::*, synchronization::*,
 };
 
 pub struct ImageUploadRequest {
-    pub image: Arc<Image>,
+    pub image: Handle<Image>,
     pub data: Vec<u8>,
     // XXX: Have a mechanism to signal upon completion?
 }
 
 pub struct TransferManager {
-    device: Arc<Device>,
+    _device: DeviceGuard,
     command_pools: Vec<CommandPool>,
     command_buffers: Vec<CommandBuffer>,
 
@@ -49,34 +32,33 @@ pub struct TransferManager {
     submission_index: u64,
 
     // XXX: This needs to be a persistently mapped buffer
-    staging_buffer: Arc<Buffer>,
+    staging_buffer: Escape<Buffer>,
     staging_buffer_offset: AtomicUsize,
 
     image_upload_requests: Vec<ImageUploadRequest>,
-    completed_images: Vec<Arc<Image>>,
+    completed_images: Vec<Handle<Image>>,
 
     image_upload_request_sender: Sender<ImageUploadRequest>,
     image_upload_request_receiver: Receiver<ImageUploadRequest>,
 
-    image_upload_complete_sender: Sender<Arc<Image>>,
+    image_upload_complete_sender: Sender<Handle<Image>>,
 }
+
+const STAGING_BUFFER_SIZE: u32 = 64 * 1024 * 1024;
 
 impl TransferManager {
     pub fn new(
-        device: Arc<Device>,
+        device: DeviceGuard,
+        factory: &Factory,
         transfer_queue: Queue,
         graphics_queue: Queue,
-        allocator: Arc<Mutex<Allocator>>,
-        image_upload_complete_sender: Sender<Arc<Image>>,
+        image_upload_complete_sender: Sender<Handle<Image>>,
     ) -> Result<Self> {
-        let staging_buffer = Buffer::new(
-            device.clone(),
-            allocator,
+        let staging_buffer = factory.create_buffer(
             BufferDesc::new()
-                .set_size(64 * 1024 * 1024)
+                .set_size(STAGING_BUFFER_SIZE)
                 .set_device_only(false),
         )?;
-        let staging_buffer = Arc::new(staging_buffer);
         let staging_buffer_offset = AtomicUsize::new(0);
 
         let mut command_pools = Vec::with_capacity(constants::MAX_FRAMES as usize);
@@ -107,7 +89,7 @@ impl TransferManager {
             crossbeam_channel::unbounded();
 
         Ok(Self {
-            device,
+            _device: device,
             command_pools,
             command_buffers,
             transfer_queue,
@@ -125,11 +107,7 @@ impl TransferManager {
         })
     }
 
-    pub fn request_image_upload(&mut self, image: Arc<Image>, data: Vec<u8>) {
-        self.image_upload_requests
-            .push(ImageUploadRequest { image, data })
-    }
-
+    /// Function to be run periodically to perform asynchronous transfers
     pub fn perform_transfers(&mut self) -> Result<()> {
         // XXX: Technically we can have two in flight transfer_queue submissions running at once
         //      Implement that one day...
@@ -163,28 +141,23 @@ impl TransferManager {
             let num_channels = 4;
             // XXX: Handle proper alignment when number of channels is not guaranteed to be multiple of 4.
             // let image_alignment = 4;
-            let aligned_image_size =
-                image_request.image.width() * image_request.image.height() * num_channels;
-
-            let current_offset = self
-                .staging_buffer_offset
-                .fetch_add(aligned_image_size as usize, Ordering::Relaxed);
+            // let aligned_image_size =
+            //     image_request.image.width() * image_request.image.height() * num_channels;
+            // let current_offset = self
+            //     .staging_buffer_offset
+            //     .fetch_add(aligned_image_size as usize, Ordering::Relaxed);
 
             self.staging_buffer
                 .copy_data_to_buffer(&image_request.data)?;
 
             let barriers = Barriers::new().add_image(
-                image_request.image.as_ref(),
+                &image_request.image,
                 ResourceState::UNDEFINED,
                 ResourceState::COPY_DESTINATION,
             );
             command_buffer.pipeline_barrier(barriers);
 
-            command_buffer.copy_buffer_to_image(
-                &self.staging_buffer,
-                image_request.image.as_ref(),
-                0,
-            );
+            command_buffer.copy_buffer_to_image(&self.staging_buffer, &image_request.image, 0);
 
             // log::info!(
             //     "Transfer index {}, graphics index {}",
@@ -193,7 +166,7 @@ impl TransferManager {
             // );
 
             let barriers = Barriers::new().add_image_with_queue_transfer(
-                image_request.image.as_ref(),
+                &image_request.image,
                 ResourceState::COPY_DESTINATION,
                 ResourceState::COPY_DESTINATION,
                 &self.transfer_queue,
@@ -203,23 +176,13 @@ impl TransferManager {
 
             command_buffer.end()?;
 
-            // XXX: is this wait semaphores needed?
-            let wait_semaphores = SemaphoreSubmitInfo {
-                semaphore: &self.submission_semaphore,
-                stage_mask: vk::PipelineStageFlags2::TRANSFER,
-                value: Some(self.submission_index),
-            };
             let signal_semaphores = SemaphoreSubmitInfo {
                 semaphore: &self.submission_semaphore,
                 stage_mask: vk::PipelineStageFlags2::TRANSFER,
                 value: Some(self.submission_index + 1),
             };
-            self.transfer_queue.submit(
-                &[command_buffer],
-                // &[wait_semaphores],
-                &[],
-                &[signal_semaphores],
-            )?;
+            self.transfer_queue
+                .submit(&[command_buffer], &[], &[signal_semaphores])?;
             self.submission_index += 1;
 
             self.completed_images.push(image_request.image);

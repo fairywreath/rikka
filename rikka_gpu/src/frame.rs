@@ -1,12 +1,10 @@
-use std::sync::{Arc, Weak};
-
 use anyhow::Result;
 use rikka_core::vk;
 
 use crate::{
     command_buffer::*,
     constants,
-    device::Device,
+    factory::DeviceGuard,
     query::{PipelineStatsQueryPool, TimestampQueryPool},
     queue::*,
     synchronization::*,
@@ -26,7 +24,7 @@ pub struct FrameThreadPoolsDesc {
 }
 
 pub struct FrameThreadPoolsManager {
-    device: Arc<Device>,
+    device: DeviceGuard,
     frame_thread_pools: Vec<FrameThreadPools>,
     num_frames: u32,
     num_threads: u32,
@@ -34,7 +32,7 @@ pub struct FrameThreadPoolsManager {
 }
 
 impl FrameThreadPoolsManager {
-    pub fn new(device: Arc<Device>, desc: FrameThreadPoolsDesc) -> Result<Self> {
+    pub fn new(device: DeviceGuard, desc: FrameThreadPoolsDesc) -> Result<Self> {
         let num_pools = desc.num_frames * desc.num_threads;
 
         let mut frame_thread_pools: Vec<FrameThreadPools> = vec![];
@@ -94,7 +92,7 @@ pub struct FrameIndexData {
 }
 
 pub struct FrameSynchronizationManager {
-    device: Arc<Device>,
+    device: DeviceGuard,
 
     frame_index_data: FrameIndexData,
 
@@ -109,7 +107,7 @@ pub struct FrameSynchronizationManager {
 }
 
 impl FrameSynchronizationManager {
-    pub(crate) fn new(device: Arc<Device>) -> Result<Self> {
+    pub(crate) fn new(device: DeviceGuard) -> Result<Self> {
         let mut render_complete_semaphores =
             Vec::<Semaphore>::with_capacity(constants::MAX_FRAMES as usize);
         for _ in 0..constants::MAX_FRAMES as usize {
