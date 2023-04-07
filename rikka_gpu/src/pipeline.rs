@@ -1,17 +1,7 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 use rikka_core::vk;
 
-use crate::{
-    constants,
-    descriptor_set::*,
-    device::Device,
-    escape::Escape,
-    factory::{DeviceGuard, Factory},
-    shader_state::*,
-    types::*,
-};
+use crate::{constants, descriptor_set::*, escape::*, factory::*, shader_state::*, types::*};
 
 pub struct GraphicsPipelineDesc {
     pub vertex_input_state: VertexInputState,
@@ -120,7 +110,7 @@ pub struct GraphicsPipeline {
     // XXX: Do we need this?
     desc: GraphicsPipelineDesc,
 
-    descriptor_set_layouts: Vec<Escape<DescriptorSetLayout>>,
+    descriptor_set_layouts: Vec<Handle<DescriptorSetLayout>>,
 }
 
 impl GraphicsPipeline {
@@ -168,7 +158,7 @@ impl GraphicsPipeline {
 
         let descriptor_set_layouts = layout_descs
             .into_iter()
-            .map(|desc| Ok(factory.create_descriptor_set_layout(desc)?))
+            .map(|desc| Ok(Handle::from(factory.create_descriptor_set_layout(desc)?)))
             .collect::<Result<Vec<_>>>()?;
 
         let vulkan_descriptor_set_layouts = descriptor_set_layouts
@@ -407,7 +397,7 @@ impl GraphicsPipeline {
         self.raw_layout
     }
 
-    pub fn descriptor_set_layouts(&self) -> &[Escape<DescriptorSetLayout>] {
+    pub fn descriptor_set_layouts(&self) -> &[Handle<DescriptorSetLayout>] {
         &self.descriptor_set_layouts
     }
 }

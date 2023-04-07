@@ -1,34 +1,28 @@
-use std::{
-    mem::ManuallyDrop,
-    sync::{Arc, Weak},
-};
-
-use anyhow::{Context, Error, Result};
+use anyhow::Result;
 
 use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
 
 use rikka_core::vk;
 use rikka_gpu::{
-    self as gpu, barriers::*, buffer::*, descriptor_set::*, gpu::*, image::*, pipeline::*,
-    sampler::*, shader_state::*, types::*,
+    barriers::*, buffer::*, escape::*, gpu::*, image::*, pipeline::*, shader_state::*, types::*,
 };
 
 use crate::renderer::{gltf::*, loader::*, renderer::*};
 
 pub struct RikkaApp {
-    uniform_buffer: Arc<Buffer>,
+    uniform_buffer: Handle<Buffer>,
 
-    zero_buffer: Arc<Buffer>,
+    zero_buffer: Handle<Buffer>,
 
-    graphics_pipeline: GraphicsPipeline,
+    graphics_pipeline: Handle<GraphicsPipeline>,
 
     uniform_data: UniformData,
 
     gltf_scene: GltfScene,
 
-    depth_image: Arc<Image>,
+    depth_image: Handle<Image>,
 
-    thread_pool: ManuallyDrop<rayon::ThreadPool>,
+    _thread_pool: rayon::ThreadPool,
 
     // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
     // gpu: Gpu,
@@ -82,12 +76,12 @@ impl RikkaApp {
         let depth_image = renderer.create_image(depth_image_desc)?;
 
         renderer.gpu().transition_image_layout(
-            depth_image.as_ref(),
+            &depth_image,
             ResourceState::UNDEFINED,
             ResourceState::DEPTH_WRITE,
         )?;
 
-        let graphics_pipeline = {
+        let graphics_pipeline: Handle<GraphicsPipeline> = {
             let shader_state_desc = ShaderStateDesc::new()
                 .add_stage(ShaderStageDesc::new_from_source_file(
                     "shaders/simple_pbr.vert",
@@ -112,32 +106,36 @@ impl RikkaApp {
                 .add_vertex_attribute(3, 3, 0, vk::Format::R32G32B32A32_SFLOAT)
                 .add_vertex_stream(3, 16, vk::VertexInputRate::VERTEX);
 
-            renderer.gpu().create_graphics_pipeline(
-                GraphicsPipelineDesc::new()
-                    // .set_shader_stages(shader_state.vulkan_shader_stages())
-                    .set_shader_state(shader_state_desc)
-                    .set_extent(renderer.extent().width, renderer.extent().height)
-                    .set_rendering_state(
-                        RenderingState::new_dimensionless()
-                            .add_color_attachment(
-                                RenderColorAttachment::new()
-                                    .set_format(renderer.gpu().swapchain().format()),
-                            )
-                            .set_depth_attachment(
-                                RenderDepthStencilAttachment::new()
-                                    .set_format(vk::Format::D32_SFLOAT),
-                            ),
-                    )
-                    // .add_descriptor_set_layout(descriptor_set_layout.raw())
-                    // .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
-                    .set_vertex_input_state(vertex_input_state)
-                    .set_rasterization_state(
-                        RasterizationState::new()
-                            .set_polygon_mode(vk::PolygonMode::FILL)
-                            .set_cull_mode(vk::CullModeFlags::NONE),
-                    ),
-            )?
+            renderer
+                .gpu()
+                .create_graphics_pipeline(
+                    GraphicsPipelineDesc::new()
+                        // .set_shader_stages(shader_state.vulkan_shader_stages())
+                        .set_shader_state(shader_state_desc)
+                        .set_extent(renderer.extent().width, renderer.extent().height)
+                        .set_rendering_state(
+                            RenderingState::new_dimensionless()
+                                .add_color_attachment(
+                                    RenderColorAttachment::new()
+                                        .set_format(renderer.gpu().swapchain().format()),
+                                )
+                                .set_depth_attachment(
+                                    RenderDepthStencilAttachment::new()
+                                        .set_format(vk::Format::D32_SFLOAT),
+                                ),
+                        )
+                        // .add_descriptor_set_layout(descriptor_set_layout.raw())
+                        // .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
+                        .set_vertex_input_state(vertex_input_state)
+                        .set_rasterization_state(
+                            RasterizationState::new()
+                                .set_polygon_mode(vk::PolygonMode::FILL)
+                                .set_cull_mode(vk::CullModeFlags::NONE),
+                        ),
+                )?
+                .into()
         };
+
         let mut transfer_manager = renderer.gpu().new_transfer_manager()?;
         let mut async_loader =
             AsynchronousLoader::new(transfer_manager.new_image_upload_request_sender());
@@ -152,13 +150,12 @@ impl RikkaApp {
 
         let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(3).build()?;
 
-        // XXX FIXME: These will be moved to the global/static threadspace and GPU will be dropped first before these, very unsafe!
+        // XXX: Are these fire-and-forget threads requried to be spawned from a custom threadpool?
         thread_pool.spawn(move || loop {
             async_loader
                 .update()
                 .expect("Async loader failed to update!");
         });
-
         thread_pool.spawn(move || loop {
             transfer_manager
                 .perform_transfers()
@@ -178,7 +175,7 @@ impl RikkaApp {
             depth_image,
             zero_buffer,
 
-            thread_pool: ManuallyDrop::new(thread_pool),
+            _thread_pool: thread_pool,
         })
     }
 
@@ -197,7 +194,7 @@ impl RikkaApp {
             command_buffer.begin()?;
 
             let barriers = Barriers::new().add_image(
-                swapchain.current_image_handle().as_ref(),
+                swapchain.current_image(),
                 ResourceState::UNDEFINED,
                 ResourceState::RENDER_TARGET,
             );
@@ -261,7 +258,7 @@ impl RikkaApp {
                         mesh_draw.tangent_offset as _,
                     );
                 } else {
-                    command_buffer.bind_vertex_buffer(self.zero_buffer.as_ref(), 3, 0);
+                    command_buffer.bind_vertex_buffer(&self.zero_buffer, 3, 0);
                 }
 
                 command_buffer.bind_index_buffer(
@@ -283,7 +280,7 @@ impl RikkaApp {
             command_buffer.end_rendering();
 
             let barriers = Barriers::new().add_image(
-                swapchain.current_image_handle().as_ref(),
+                swapchain.current_image(),
                 ResourceState::RENDER_TARGET,
                 ResourceState::PRESENT,
             );
@@ -315,21 +312,5 @@ impl RikkaApp {
 
     pub fn update_projection(&mut self, projection: &Matrix4<f32>) {
         self.uniform_data.projection = projection.clone();
-    }
-}
-
-impl Drop for RikkaApp {
-    fn drop(&mut self) {
-        // Terminate spawned threads
-        unsafe {
-            ManuallyDrop::drop(&mut self.thread_pool);
-        }
-
-        // XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
-        //      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
-        //      object destruction until the end of the current frame
-        //
-        //      Currently we just wait idle before dropping any resources but this needs to be removed
-        self.renderer.wait_idle();
     }
 }

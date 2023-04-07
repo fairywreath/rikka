@@ -15,23 +15,20 @@ use rikka_core::{
     vk,
 };
 use rikka_gpu::{
-    self as gpu, buffer::*, constants::INVALID_BINDLESS_TEXTURE_INDEX, descriptor_set::*, gpu::Gpu,
-    image::*, sampler::*,
+    self as gpu, buffer::*, constants::INVALID_BINDLESS_TEXTURE_INDEX, descriptor_set::*,
+    escape::Handle, gpu::Gpu, image::*, sampler::*,
 };
 
 use crate::renderer::{loader::*, MaterialData};
 
-type BufferHandle = Arc<Buffer>;
-type SamplerHandle = Arc<Sampler>;
-
 pub struct MeshDraw {
-    pub position_buffer: Option<BufferHandle>,
-    pub index_buffer: Option<BufferHandle>,
-    pub tex_coords_buffer: Option<BufferHandle>,
-    pub normal_buffer: Option<BufferHandle>,
-    pub tangent_buffer: Option<BufferHandle>,
+    pub position_buffer: Option<Handle<Buffer>>,
+    pub index_buffer: Option<Handle<Buffer>>,
+    pub tex_coords_buffer: Option<Handle<Buffer>>,
+    pub normal_buffer: Option<Handle<Buffer>>,
+    pub tangent_buffer: Option<Handle<Buffer>>,
 
-    pub material_buffer: Option<BufferHandle>,
+    pub material_buffer: Option<Handle<Buffer>>,
     pub material_data: MaterialData,
 
     // Material data
@@ -103,7 +100,7 @@ impl Default for MeshDraw {
 
 pub struct GltfScene {
     pub mesh_draws: Vec<MeshDraw>,
-    _gpu_images: Vec<Arc<Image>>,
+    _gpu_images: Vec<Handle<Image>>,
 }
 
 fn dxgi_format_to_vulkan_format(dxgi_format: DxgiFormat) -> vk::Format {
@@ -137,7 +134,7 @@ fn gltf_mag_filter_to_vulkan_filter(gltf_filter: gltf::texture::MagFilter) -> vk
 }
 
 impl GltfScene {
-    fn create_image_from_file(gpu: &mut Gpu, file_name: &str) -> Result<Arc<Image>> {
+    fn create_image_from_file(gpu: &mut Gpu, file_name: &str) -> Result<Handle<Image>> {
         let data = std::fs::read(file_name)?;
 
         if let Ok(dds) = ddsfile::Dds::read(&mut std::io::Cursor::new(&data)) {
@@ -152,8 +149,7 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dds.get_width(), dds.get_height(), 1)
                 .set_format(vulkan_format)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = gpu.create_image(image_desc)?;
-            let texture_image = Arc::new(texture_image);
+            let texture_image: Handle<Image> = gpu.create_image(image_desc)?.into();
 
             // XXX: Handle mip maps and texture layers
 
@@ -176,8 +172,7 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dynamic_image.width(), dynamic_image.height(), 1)
                 .set_format(vk::Format::R8G8B8A8_UNORM)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = gpu.create_image(image_desc)?;
-            let texture_image = Arc::new(texture_image);
+            let texture_image: Handle<Image> = gpu.create_image(image_desc)?.into();
 
             let texture_rgba8 = dynamic_image.clone().into_rgba8();
             let texture_data_bytes = texture_rgba8.as_raw();
@@ -201,7 +196,7 @@ impl GltfScene {
         file_name: &str,
         // XXX: Use a channel for this
         async_loader: &mut AsynchronousLoader,
-    ) -> Result<Arc<Image>> {
+    ) -> Result<Handle<Image>> {
         let data = std::fs::read(file_name)?;
         let mut data = std::io::Cursor::new(&data);
 
@@ -218,7 +213,14 @@ impl GltfScene {
             let image_desc = ImageDesc::new(dds.get_width(), dds.get_height(), 1)
                 .set_format(vulkan_format)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = Arc::new(gpu.create_image(image_desc)?);
+            let texture_image = Handle::from(gpu.create_image(image_desc)?);
+
+            // XXX: Do this internally in the GPU
+            gpu.add_bindless_image_update(rikka_gpu::types::ImageResourceUpdate {
+                frame: 0,
+                image: Some(texture_image.clone()),
+                sampler: None,
+            });
 
             async_loader.request_image_file_load(file_name, texture_image.clone());
             Ok(texture_image)
@@ -237,10 +239,16 @@ impl GltfScene {
             let image_desc = ImageDesc::new(width, height, 1)
                 .set_format(format)
                 .set_usage_flags(vk::ImageUsageFlags::SAMPLED);
-            let texture_image = Arc::new(gpu.create_image(image_desc)?);
+            let texture_image = Handle::from(gpu.create_image(image_desc)?);
+
+            // XXX: Do this internally in the GPU
+            gpu.add_bindless_image_update(rikka_gpu::types::ImageResourceUpdate {
+                frame: 0,
+                image: Some(texture_image.clone()),
+                sampler: None,
+            });
 
             // log::info!("Finished (soft) reading file {}", file_name);
-
             async_loader.request_image_file_load(file_name, texture_image.clone());
             Ok(texture_image)
         }
@@ -252,7 +260,7 @@ impl GltfScene {
         images: gltf::iter::Images,
         // XXX: Use a channel for this
         async_loader: &mut AsynchronousLoader,
-    ) -> Result<Vec<Arc<Image>>> {
+    ) -> Result<Vec<Handle<Image>>> {
         let mut gpu_images = Vec::with_capacity(images.len());
 
         let image_loading_start_time = Instant::now();
@@ -280,7 +288,7 @@ impl GltfScene {
         Ok(gpu_images)
     }
 
-    fn load_samplers(gpu: &Gpu, samplers: gltf::iter::Samplers) -> Result<Vec<SamplerHandle>> {
+    fn load_samplers(gpu: &Gpu, samplers: gltf::iter::Samplers) -> Result<Vec<Handle<Sampler>>> {
         let mut gpu_samplers = Vec::with_capacity(samplers.len());
 
         for sampler in samplers {
@@ -296,7 +304,7 @@ impl GltfScene {
                         .unwrap_or(gltf::texture::MagFilter::Linear),
                 ));
 
-            let gpu_sampler = Arc::new(gpu.create_sampler(sampler_desc)?);
+            let gpu_sampler = Handle::from(gpu.create_sampler(sampler_desc)?);
             gpu_samplers.push(gpu_sampler);
         }
 
@@ -342,7 +350,7 @@ impl GltfScene {
         gpu: &mut Gpu,
         buffer_views: gltf::iter::Views,
         buffers_data: &[Vec<u8>],
-    ) -> Result<Vec<BufferHandle>> {
+    ) -> Result<Vec<Handle<Buffer>>> {
         let mut gpu_buffers = Vec::with_capacity(buffer_views.len());
 
         log::info!("Buffer views length {}", buffer_views.len());
@@ -374,7 +382,7 @@ impl GltfScene {
             )?;
             gpu.copy_buffer(&staging_buffer, &gpu_buffer)?;
 
-            gpu_buffers.push(Arc::new(gpu_buffer));
+            gpu_buffers.push(Handle::from(gpu_buffer));
         }
 
         Ok(gpu_buffers)
@@ -383,8 +391,8 @@ impl GltfScene {
     pub fn from_file(
         gpu: &mut Gpu,
         file_name: &str,
-        uniform_buffer: &Arc<Buffer>,
-        descriptor_set_layout: &Arc<DescriptorSetLayout>,
+        uniform_buffer: &Handle<Buffer>,
+        descriptor_set_layout: &Handle<DescriptorSetLayout>,
         // XXX: Use a channel for this
         async_loader: &mut AsynchronousLoader,
     ) -> Result<Self> {
@@ -542,7 +550,7 @@ impl GltfScene {
                 )?;
                 material_buffer
                     .copy_data_to_buffer(std::slice::from_ref(&mesh_draw.material_data))?;
-                mesh_draw.material_buffer = Some(Arc::new(material_buffer));
+                mesh_draw.material_buffer = Some(Handle::from(material_buffer));
                 // log::info!(
                 //     "Primitive diffuse texture index: {}",
                 //     mesh_draw.material_data.diffuse_texture,

@@ -1,15 +1,11 @@
-use std::sync::Arc;
-
 use anyhow::Result;
-use crossbeam_channel::Sender;
-use rayon::ThreadPool;
+use crossbeam_channel::{Receiver, Sender};
 
-use rikka_core::vk;
-use rikka_gpu::{gpu::*, image::Image, transfer::ImageUploadRequest};
+use rikka_gpu::{escape::Handle, image::Image, transfer::ImageUploadRequest};
 
 struct ImageFileLoadRequest {
     file_name: String,
-    image: Arc<Image>,
+    image: Handle<Image>,
 }
 
 pub struct AsynchronousLoader {
@@ -46,7 +42,7 @@ impl AsynchronousLoader {
     }
 
     // XXX: Use a channel to request
-    pub fn request_image_file_load(&mut self, file_name: &str, image: Arc<Image>) {
+    pub fn request_image_file_load(&mut self, file_name: &str, image: Handle<Image>) {
         self.image_file_load_requests.push(ImageFileLoadRequest {
             file_name: file_name.to_string(),
             image,

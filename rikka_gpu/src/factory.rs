@@ -78,6 +78,12 @@ impl ResourceGuard {
     }
 }
 
+impl Drop for ResourceGuard {
+    fn drop(&mut self) {
+        self.cleanup_resources();
+    }
+}
+
 #[derive(Clone)]
 pub struct DeviceGuard {
     guard: Arc<ResourceGuard>,

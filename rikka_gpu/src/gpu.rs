@@ -138,7 +138,6 @@ impl Gpu {
         let frame_synchronization_manager = FrameSynchronizationManager::new(device.clone())?;
 
         // XXX: These are not safe and the guards do nnot work against these: move the descriptor pools inside the guard(same applies for command buffers)
-
         let global_descriptor_pool = unsafe {
             DescriptorPool::create(
                 device.clone(),

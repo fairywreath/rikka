@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender};
 
 use rikka_core::vk;
 use rikka_gpu::{
     buffer::*, command_buffer::*, descriptor_set::*, gpu::Gpu, image::*, pipeline::*, sampler::*,
 };
+
+pub use rikka_gpu::escape::Handle;
 
 pub struct RenderTechniqueDesc {
     graphics_pipelines: Vec<GraphicsPipelineDesc>,
@@ -26,13 +27,11 @@ impl RenderTechniqueDesc {
 }
 
 pub struct RenderPass {
-    // XXX: Remove `pub` here
-    pub graphics_pipeline: Arc<GraphicsPipeline>,
+    graphics_pipeline: Handle<GraphicsPipeline>,
 }
 
 pub struct RenderTechnique {
-    // XXX: Remove `pub` here
-    pub passes: Vec<RenderPass>,
+    passes: Vec<RenderPass>,
 }
 
 pub struct MaterialDesc {
@@ -99,19 +98,16 @@ impl Renderer {
         self.gpu.swapchain_extent()
     }
 
-    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Arc<Buffer>> {
-        let buffer = self.gpu.create_buffer(desc)?;
-        Ok(Arc::new(buffer))
+    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Handle<Buffer>> {
+        Ok(self.gpu.create_buffer(desc)?.into())
     }
 
-    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Arc<Image>> {
-        let image = self.gpu.create_image(desc)?;
-        Ok(Arc::new(image))
+    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Handle<Image>> {
+        Ok(self.gpu.create_image(desc)?.into())
     }
 
-    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Arc<Sampler>> {
-        let sampler = self.gpu.create_sampler(desc)?;
-        Ok(Arc::new(sampler))
+    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Handle<Sampler>> {
+        Ok(self.gpu.create_sampler(desc)?.into())
     }
 
     pub fn create_technique(&self, desc: RenderTechniqueDesc) -> Result<Arc<RenderTechnique>> {
@@ -119,9 +115,9 @@ impl Renderer {
             .graphics_pipelines
             .into_iter()
             .map(|graphics_pipeline_desc| {
-                let graphics_pipeline =
-                    self.gpu.create_graphics_pipeline(graphics_pipeline_desc)?;
-                Ok(Arc::new(graphics_pipeline))
+                Ok(Handle::from(
+                    self.gpu.create_graphics_pipeline(graphics_pipeline_desc)?,
+                ))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -140,7 +136,7 @@ impl Renderer {
         }))
     }
 
-    pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Arc<GraphicsPipeline> {
+    pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Handle<GraphicsPipeline> {
         material.render_technique.passes[pass_index as usize]
             .graphics_pipeline
             .clone()
@@ -174,6 +170,6 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        self.gpu.wait_idle();
+        // self.gpu.wait_idle();
     }
 }
