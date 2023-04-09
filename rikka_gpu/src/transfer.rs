@@ -32,7 +32,7 @@ pub struct TransferManager {
     submission_index: u64,
 
     // XXX: This needs to be a persistently mapped buffer
-    staging_buffer: Escape<Buffer>,
+    staging_buffer: Handle<Buffer>,
     staging_buffer_offset: AtomicUsize,
 
     image_upload_requests: Vec<ImageUploadRequest>,
@@ -54,11 +54,14 @@ impl TransferManager {
         graphics_queue: Queue,
         image_upload_complete_sender: Sender<Handle<Image>>,
     ) -> Result<Self> {
-        let staging_buffer = factory.create_buffer(
-            BufferDesc::new()
-                .set_size(STAGING_BUFFER_SIZE)
-                .set_device_only(false),
-        )?;
+        let staging_buffer = Handle::new(
+            factory.create_buffer(
+                BufferDesc::new()
+                    .set_size(STAGING_BUFFER_SIZE)
+                    .set_device_only(false),
+            )?,
+            factory.hub_guard(),
+        );
         let staging_buffer_offset = AtomicUsize::new(0);
 
         let mut command_pools = Vec::with_capacity(constants::MAX_FRAMES as usize);
@@ -200,17 +203,15 @@ impl TransferManager {
         self.image_upload_request_sender.clone()
     }
 
+    pub fn destroy(self) {
+        log::info!("Destroyed GPU transfer manager");
+    }
+
     /// Receives image upload requests from the channel
     fn receive_image_upload_requests(&mut self) {
         while !self.image_upload_request_receiver.is_empty() {
             self.image_upload_requests
                 .push(self.image_upload_request_receiver.recv().unwrap());
         }
-    }
-}
-
-impl Drop for TransferManager {
-    fn drop(&mut self) {
-        log::info!("Transfer Manager dropped!");
     }
 }

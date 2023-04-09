@@ -100,7 +100,7 @@ impl Default for MeshDraw {
 
 pub struct GltfScene {
     pub mesh_draws: Vec<MeshDraw>,
-    _gpu_images: Vec<Handle<Image>>,
+    pub _gpu_images: Vec<Handle<Image>>,
 }
 
 fn dxgi_format_to_vulkan_format(dxgi_format: DxgiFormat) -> vk::Format {

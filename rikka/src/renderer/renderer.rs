@@ -71,6 +71,8 @@ impl Renderer {
     }
 
     pub fn begin_frame(&mut self) -> Result<()> {
+        // log::debug!("Renderer begin frame called");
+
         // XXX: Handle swapchain recreation
         self.gpu.new_frame()?;
         self.gpu.swapchain_acquire_next_image()?;
@@ -99,15 +101,15 @@ impl Renderer {
     }
 
     pub fn create_buffer(&self, desc: BufferDesc) -> Result<Handle<Buffer>> {
-        Ok(self.gpu.create_buffer(desc)?.into())
+        Ok(self.gpu.create_buffer(desc)?)
     }
 
     pub fn create_image(&mut self, desc: ImageDesc) -> Result<Handle<Image>> {
-        Ok(self.gpu.create_image(desc)?.into())
+        Ok(self.gpu.create_image(desc)?)
     }
 
     pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Handle<Sampler>> {
-        Ok(self.gpu.create_sampler(desc)?.into())
+        Ok(self.gpu.create_sampler(desc)?)
     }
 
     pub fn create_technique(&self, desc: RenderTechniqueDesc) -> Result<Arc<RenderTechnique>> {
@@ -170,6 +172,7 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        // self.gpu.wait_idle();
+        self.gpu.wait_idle();
+        log::info!("Renderer dropped");
     }
 }

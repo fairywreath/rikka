@@ -44,7 +44,7 @@ pub struct Gpu {
     transfer_command_pool: CommandPool,
 
     // XXX: Use escape/terminals for this?
-    global_descriptor_pool: Arc<DescriptorPool>,
+    global_descriptor_pool: Handle<DescriptorPool>,
 
     // XXX: Use channel for this?
     bindless_images_to_update: Vec<ImageResourceUpdate>,
@@ -55,7 +55,7 @@ pub struct Gpu {
 
     bindless_descriptor_set: Arc<DescriptorSet>,
     bindless_descriptor_set_layout: Handle<DescriptorSetLayout>,
-    bindless_descriptor_pool: Arc<DescriptorPool>,
+    bindless_descriptor_pool: Handle<DescriptorPool>,
 
     default_sampler: Handle<Sampler>,
 
@@ -73,6 +73,7 @@ pub struct Gpu {
     compute_queue: Queue,
 
     factory: Factory,
+    resource_hub: HubGuard,
     device: DeviceGuard,
 }
 
@@ -102,7 +103,8 @@ impl Gpu {
 
         // Resource guards/wrappers
         let device = DeviceGuard::new(device);
-        let factory = Factory::new(device.clone());
+        let resource_hub = HubGuard::new();
+        let factory = Factory::new(device.clone(), resource_hub.clone());
 
         let graphics_queue = device.get_queue(QueueType::Graphics, 0);
         let transfer_queue = device.get_queue(QueueType::Transfer, 0);
@@ -137,78 +139,72 @@ impl Gpu {
 
         let frame_synchronization_manager = FrameSynchronizationManager::new(device.clone())?;
 
-        // XXX: These are not safe and the guards do nnot work against these: move the descriptor pools inside the guard(same applies for command buffers)
-        let global_descriptor_pool = unsafe {
-            DescriptorPool::create(
-                device.clone(),
-                DescriptorPoolDesc::new()
-                    .set_max_sets(constants::GLOBAL_DESCRIPTOR_POOL_MAX_SETS)
-                    .add_pool_size(
-                        vk::DescriptorType::SAMPLER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::SAMPLED_IMAGE,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::STORAGE_IMAGE,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::UNIFORM_BUFFER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::STORAGE_BUFFER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::STORAGE_TEXEL_BUFFER,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::INPUT_ATTACHMENT,
-                        constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
-                    ),
-            )?
-        };
+        let global_descriptor_pool = factory.create_descriptor_pool(
+            DescriptorPoolDesc::new()
+                .set_max_sets(constants::GLOBAL_DESCRIPTOR_POOL_MAX_SETS)
+                .add_pool_size(
+                    vk::DescriptorType::SAMPLER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_IMAGE,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_TEXEL_BUFFER,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::INPUT_ATTACHMENT,
+                    constants::GLOBAL_DESCRIPTOR_POOL_ELEMENT_SIZE,
+                ),
+        )?;
+        let global_descriptor_pool = Handle::new(global_descriptor_pool, resource_hub.clone());
 
-        let bindless_descriptor_pool = unsafe {
-            DescriptorPool::create(
-                device.clone(),
-                DescriptorPoolDesc::new()
-                    .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-                    // Only 1 set for all bindless images?
-                    // .set_max_sets(1)
-                    .set_max_sets(constants::MAX_NUM_BINDLESS_RESOURCECS * 2)
-                    .add_pool_size(
-                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                        constants::MAX_NUM_BINDLESS_RESOURCECS,
-                    )
-                    .add_pool_size(
-                        vk::DescriptorType::STORAGE_IMAGE,
-                        constants::MAX_NUM_BINDLESS_RESOURCECS,
-                    ),
-            )?
-        };
-        let bindless_descriptor_pool = Arc::new(bindless_descriptor_pool);
+        let bindless_descriptor_pool = factory.create_descriptor_pool(
+            DescriptorPoolDesc::new()
+                .set_flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+                // Only 1 set for all bindless images?
+                // .set_max_sets(1)
+                .set_max_sets(constants::MAX_NUM_BINDLESS_RESOURCECS * 2)
+                .add_pool_size(
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    constants::MAX_NUM_BINDLESS_RESOURCECS,
+                )
+                .add_pool_size(
+                    vk::DescriptorType::STORAGE_IMAGE,
+                    constants::MAX_NUM_BINDLESS_RESOURCECS,
+                ),
+        )?;
+        let bindless_descriptor_pool = Handle::new(bindless_descriptor_pool, resource_hub.clone());
 
         let bindless_descriptor_set_layout_desc = DescriptorSetLayoutDesc::new()
             .set_flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
@@ -226,8 +222,9 @@ impl Gpu {
                 vk::ShaderStageFlags::FRAGMENT,
             ));
 
-        let bindless_descriptor_set_layout = Handle::from(
+        let bindless_descriptor_set_layout = Handle::new(
             factory.create_descriptor_set_layout(bindless_descriptor_set_layout_desc)?,
+            resource_hub.clone(),
         );
 
         let bindless_descriptor_set = DescriptorSet::new(
@@ -237,7 +234,10 @@ impl Gpu {
         )?;
         let bindless_descriptor_set = Arc::new(bindless_descriptor_set);
 
-        let default_sampler = factory.create_sampler(SamplerDesc::new())?.into();
+        let default_sampler = Handle::new(
+            factory.create_sampler(SamplerDesc::new())?,
+            resource_hub.clone(),
+        );
 
         // XXX: Actually use transfer command queue for this, currently use graphics since need different queues for resource state transitions
         let transfer_command_pool =
@@ -254,6 +254,7 @@ impl Gpu {
 
         Ok(Self {
             device,
+            resource_hub,
             factory,
 
             graphics_queue,
@@ -268,7 +269,7 @@ impl Gpu {
             frame_thread_pools_manager,
             frame_synchronization_manager,
 
-            global_descriptor_pool: Arc::new(global_descriptor_pool),
+            global_descriptor_pool,
 
             bindless_descriptor_pool,
             bindless_descriptor_set_layout,
@@ -288,11 +289,12 @@ impl Gpu {
         })
     }
 
-    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Escape<Buffer>> {
-        self.factory.create_buffer(desc)
+    pub fn create_buffer(&self, desc: BufferDesc) -> Result<Handle<Buffer>> {
+        let buffer = self.factory.create_buffer(desc)?;
+        Ok(Handle::new(buffer, self.resource_hub.clone()))
     }
 
-    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Escape<Image>> {
+    pub fn create_image(&mut self, desc: ImageDesc) -> Result<Handle<Image>> {
         let mut image = self.factory.create_image(desc)?;
         image.set_bindless_index(
             self.bindless_image_new_index
@@ -301,11 +303,12 @@ impl Gpu {
 
         // XXX: Add image bindless image descriptor update here
 
-        Ok(image)
+        Ok(Handle::new(image, self.resource_hub.clone()))
     }
 
-    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Escape<Sampler>> {
-        self.factory.create_sampler(desc)
+    pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Handle<Sampler>> {
+        let sampler = self.factory.create_sampler(desc)?;
+        Ok(Handle::new(sampler, self.resource_hub.clone()))
     }
 
     // XXX: Should we expose this?
@@ -316,15 +319,17 @@ impl Gpu {
     pub fn create_graphics_pipeline(
         &self,
         desc: GraphicsPipelineDesc,
-    ) -> Result<Escape<GraphicsPipeline>> {
-        self.factory.create_graphics_pipeline(desc)
+    ) -> Result<Handle<GraphicsPipeline>> {
+        let pipeline = self.factory.create_graphics_pipeline(desc)?;
+        Ok(Handle::new(pipeline, self.resource_hub.clone()))
     }
 
     pub fn create_descriptor_set_layout(
         &self,
         desc: DescriptorSetLayoutDesc,
-    ) -> Result<Escape<DescriptorSetLayout>> {
-        self.factory.create_descriptor_set_layout(desc)
+    ) -> Result<Handle<DescriptorSetLayout>> {
+        let set = self.factory.create_descriptor_set_layout(desc)?;
+        Ok(Handle::new(set, self.resource_hub.clone()))
     }
 
     pub fn create_descriptor_set(&self, desc: DescriptorSetDesc) -> Result<DescriptorSet> {
@@ -435,7 +440,7 @@ impl Gpu {
         self.update_bindless_images();
 
         // XXX: Technically it MAY not be safe to destroy resource here. Need a proper resource tracker management system(don't wanna write GL though ugh!);
-        self.device.cleanup_resources();
+        self.factory.cleanup_resources();
 
         Ok(present_result)
     }
@@ -697,6 +702,10 @@ impl Gpu {
             self.shader_read_image_sender.clone(),
         )
     }
+
+    pub fn force_cleanup(&self) {
+        self.factory.cleanup_resources();
+    }
 }
 
 impl Drop for Gpu {
@@ -707,6 +716,19 @@ impl Drop for Gpu {
                 .queue_wait_idle(self.graphics_queue.raw())
                 .unwrap();
         }
+
+        self.force_cleanup();
+
+        unsafe {
+            // self.bindless_descriptor_pool.destroy();
+            // self.global_descriptor_pool.destroy();
+            // self.device.guard
+            // Arc::decrement_strong_count(&mut self.device.guard);
+            // Arc::decrement_strong_count(&mut self.device.guard);
+            // Arc::decrement_strong_count(&mut self.device.guard);
+        }
+
+        // log::info!("Device guard final strong count:")
 
         log::info!("GPU dropped");
     }

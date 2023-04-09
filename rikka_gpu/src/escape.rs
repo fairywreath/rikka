@@ -1,4 +1,5 @@
 use std::{
+    hash::BuildHasherDefault,
     iter::repeat,
     mem::ManuallyDrop,
     ops::{Deref, DerefMut},
@@ -7,6 +8,8 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
+
+use crate::factory::HubGuard;
 
 #[derive(Debug)]
 pub struct Escape<T> {
@@ -33,10 +36,6 @@ impl<T> Escape<T> {
 
             value
         }
-    }
-
-    pub fn share(escape: Self) -> Handle<T> {
-        escape.into()
     }
 }
 
@@ -68,7 +67,8 @@ impl<T> Drop for Escape<T> {
 
 #[derive(Debug)]
 pub struct Terminal<T> {
-    receiver: Receiver<T>,
+    // XXX: Remove this pub
+    pub receiver: Receiver<T>,
     sender: ManuallyDrop<Sender<T>>,
 }
 
@@ -110,23 +110,32 @@ impl<T> Drop for Terminal<T> {
     }
 }
 
-#[derive(Debug)]
 pub struct Handle<T> {
     inner: Arc<Escape<T>>,
+    guard: Option<HubGuard>,
 }
 
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            guard: self.guard.clone(),
         }
     }
 }
 
-impl<T> From<Escape<T>> for Handle<T> {
-    fn from(value: Escape<T>) -> Self {
+impl<T> Handle<T> {
+    pub fn new(value: Escape<T>, guard: HubGuard) -> Self {
         Self {
             inner: Arc::new(value),
+            guard: Some(guard),
+        }
+    }
+
+    pub unsafe fn new_no_guard(value: Escape<T>) -> Self {
+        Self {
+            inner: Arc::new(value),
+            guard: None,
         }
     }
 }

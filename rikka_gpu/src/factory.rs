@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use anyhow::Result;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 
 use crate::{
     buffer::*, descriptor_set::*, device::*, escape::*, image::*, pipeline::*, sampler::*,
@@ -36,6 +36,7 @@ struct ResourceHub {
     samplers: ResourceTracker<Sampler>,
     graphics_pipelines: ResourceTracker<GraphicsPipeline>,
     descriptor_set_layouts: ResourceTracker<DescriptorSetLayout>,
+    descriptor_pools: ResourceTracker<DescriptorPool>,
 }
 
 impl ResourceHub {
@@ -46,6 +47,7 @@ impl ResourceHub {
             samplers: ResourceTracker::new(),
             graphics_pipelines: ResourceTracker::new(),
             descriptor_set_layouts: ResourceTracker::new(),
+            descriptor_pools: ResourceTracker::new(),
         }
     }
 
@@ -55,91 +57,99 @@ impl ResourceHub {
         self.samplers.destroy(|s| s.destroy());
         self.graphics_pipelines.destroy(|p| p.destroy());
         self.descriptor_set_layouts.destroy(|l| l.destroy());
+        self.descriptor_pools.destroy(|p| p.destroy());
     }
 }
 
-struct ResourceGuard {
-    device: Device,
-    resource_hub: RwLock<ResourceHub>,
-}
-
-impl ResourceGuard {
-    fn new(device: Device, resource_hub: ResourceHub) -> Self {
-        Self {
-            device,
-            resource_hub: RwLock::new(resource_hub),
-        }
-    }
-
-    fn cleanup_resources(&self) {
-        unsafe {
-            self.resource_hub.write().cleanup();
-        }
-    }
-}
-
-impl Drop for ResourceGuard {
+impl Drop for ResourceHub {
     fn drop(&mut self) {
-        self.cleanup_resources();
+        unsafe { self.cleanup() }
     }
 }
 
 #[derive(Clone)]
+pub struct HubGuard {
+    hub: Arc<RwLock<ResourceHub>>,
+}
+
+impl HubGuard {
+    pub fn new() -> Self {
+        Self {
+            hub: Arc::new(RwLock::new(ResourceHub::new())),
+        }
+    }
+}
+
+// impl Drop for HubGuard {
+//     fn drop(&mut self) {
+//         unsafe {
+//             // self.hub.write().cleanup();
+//             log::info!("Hub guard count {}", Arc::strong_count(&self.hub));
+//         }
+//     }
+// }
+
+#[derive(Clone)]
 pub struct DeviceGuard {
-    guard: Arc<ResourceGuard>,
+    device: Arc<Device>,
 }
 
 impl DeviceGuard {
     pub fn new(device: Device) -> Self {
         Self {
-            guard: Arc::new(ResourceGuard::new(device, ResourceHub::new())),
+            device: Arc::new(device),
         }
     }
 
-    fn hub(&self) -> RwLockReadGuard<ResourceHub> {
-        self.guard.resource_hub.read()
-    }
-
     pub fn device(&self) -> &Device {
-        &self.guard.device
-    }
-
-    pub fn cleanup_resources(&mut self) {
-        self.guard.cleanup_resources();
+        &self.device
     }
 }
 
 impl Deref for DeviceGuard {
     type Target = Device;
-    fn deref(&self) -> &Device {
-        &self.guard.device
+    fn deref(&self) -> &Self::Target {
+        &self.device
     }
 }
 
+// impl Drop for DeviceGuard {
+//     fn drop(&mut self) {
+//         println!(
+//             "Device guard dropped, ResourceGuard count {}",
+//             Arc::strong_count(&self.device)
+//         );
+//     }
+// }
+
 pub struct Factory {
     device: DeviceGuard,
+    resource_hub: HubGuard,
 }
 
 impl Factory {
-    pub fn new(device: DeviceGuard) -> Self {
-        Self { device }
+    pub fn new(device: DeviceGuard, resource_hub: HubGuard) -> Self {
+        Self {
+            device,
+            resource_hub,
+        }
     }
 
     pub fn create_buffer(&self, desc: BufferDesc) -> Result<Escape<Buffer>> {
         let buffer =
             unsafe { Buffer::create(self.device.clone(), self.device.allocator().clone(), desc)? };
-        Ok(self.device.hub().buffers.escape(buffer))
+        Ok(self.resource_hub.hub.read().buffers.escape(buffer))
     }
 
     pub fn create_image(&self, desc: ImageDesc) -> Result<Escape<Image>> {
         let image =
             unsafe { Image::create(self.device.clone(), self.device.allocator().clone(), desc)? };
-        Ok(self.device.hub().images.escape(image))
+        Ok(self.resource_hub.hub.read().images.escape(image))
     }
 
     pub fn create_sampler(&self, desc: SamplerDesc) -> Result<Escape<Sampler>> {
         let sampler = unsafe { Sampler::create(self.device.clone(), desc)? };
-        Ok(self.device.hub().samplers.escape(sampler))
+        Ok(self.resource_hub.hub.read().samplers.escape(sampler))
     }
 
     pub fn create_graphics_pipeline(
@@ -149,8 +159,9 @@ impl Factory {
         let graphics_pipeline =
             unsafe { GraphicsPipeline::create(self.device.clone(), self, desc)? };
         Ok(self
-            .device
-            .hub()
+            .resource_hub
+            .hub
+            .read()
             .graphics_pipelines
             .escape(graphics_pipeline))
     }
@@ -160,6 +171,29 @@ impl Factory {
         desc: DescriptorSetLayoutDesc,
     ) -> Result<Escape<DescriptorSetLayout>> {
         let layout = unsafe { DescriptorSetLayout::create(self.device.clone(), desc)? };
-        Ok(self.device.hub().descriptor_set_layouts.escape(layout))
+        Ok(self
+            .resource_hub
+            .hub
+            .read()
+            .descriptor_set_layouts
+            .escape(layout))
+    }
+
+    pub fn create_descriptor_pool(
+        &self,
+        desc: DescriptorPoolDesc,
+    ) -> Result<Escape<DescriptorPool>> {
+        let pool = unsafe { DescriptorPool::create(self.device.clone(), desc)? };
+        Ok(self.resource_hub.hub.read().descriptor_pools.escape(pool))
+    }
+
+    pub fn cleanup_resources(&self) {
+        unsafe {
+            self.resource_hub.hub.write().cleanup();
+        }
+    }
+
+    pub fn hub_guard(&self) -> HubGuard {
+        self.resource_hub.clone()
     }
 }

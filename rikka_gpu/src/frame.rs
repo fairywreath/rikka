@@ -200,6 +200,8 @@ impl FrameSynchronizationManager {
                 // self.compute_work_semaphore.raw(),
             ];
 
+            // log::info!("Wait gfx compute smaphore!");
+
             let wait_info = vk::SemaphoreWaitInfo::builder()
                 .semaphores(&semaphores)
                 .values(&wait_values);

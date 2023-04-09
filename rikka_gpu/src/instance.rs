@@ -21,7 +21,7 @@ impl Instance {
         let entry = unsafe { ash::Entry::load()? };
 
         // Create vulkan instance.
-        let app_name = CString::new("Rikka RHIContext").unwrap();
+        let app_name = CString::new("Rikka").unwrap();
         let app_info = vk::ApplicationInfo::builder()
             .application_name(app_name.as_c_str())
             .api_version(vk::API_VERSION_1_3);
@@ -103,6 +103,7 @@ impl Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
+        println!("Instance dropped");
         unsafe {
             self.debug_utils
                 .destroy_debug_utils_messenger(self.debug_utils_messenger, None);

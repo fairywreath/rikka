@@ -158,7 +158,11 @@ impl GraphicsPipeline {
 
         let descriptor_set_layouts = layout_descs
             .into_iter()
-            .map(|desc| Ok(Handle::from(factory.create_descriptor_set_layout(desc)?)))
+            .map(|desc| {
+                Ok(Handle::new_no_guard(
+                    factory.create_descriptor_set_layout(desc)?,
+                ))
+            })
             .collect::<Result<Vec<_>>>()?;
 
         let vulkan_descriptor_set_layouts = descriptor_set_layouts

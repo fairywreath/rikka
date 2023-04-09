@@ -1,4 +1,4 @@
-use std::{ffi::CString, sync::Arc};
+use std::{ffi::CString, mem::ManuallyDrop, sync::Arc};
 
 use anyhow::Result;
 use gpu_allocator::{
@@ -14,7 +14,7 @@ use crate::{instance::Instance, physical_device::PhysicalDevice, queue::*, surfa
 /// Device wrapper that acts as a lifeguard for the GPU resources and the Vulkan instance.
 pub struct Device {
     // XXX: Remove Arc<>
-    allocator: Arc<Mutex<Allocator>>,
+    allocator: ManuallyDrop<Arc<Mutex<Allocator>>>,
     queue_family_indices: QueueFamilyIndices,
     raw: ash::Device,
     physical_device: PhysicalDevice,
@@ -59,7 +59,7 @@ impl Device {
         let allocator = Arc::new(Mutex::new(allocator));
 
         Ok(Self {
-            allocator,
+            allocator: ManuallyDrop::new(allocator),
             queue_family_indices,
             raw,
             physical_device,
@@ -195,7 +195,11 @@ impl Device {
 impl Drop for Device {
     fn drop(&mut self) {
         unsafe {
+            log::info!("Device dropped");
+            println!("Device dropped");
             // XXX: Queue wait idle here for ALL queues
+            // self.allocator.
+            ManuallyDrop::drop(&mut self.allocator);
             self.raw.destroy_device(None);
         }
     }

@@ -305,7 +305,7 @@ pub struct DescriptorSetDesc {
     pub binding_resources: Vec<DescriptorSetBindingResource>,
 
     // XXX: Need strong reference always?
-    pub pool: Option<Arc<DescriptorPool>>,
+    pub pool: Option<Handle<DescriptorPool>>,
     pub layout: Handle<DescriptorSetLayout>,
     // XXX: Properly support bindless images
     // pub bindless: false,
@@ -328,7 +328,7 @@ impl DescriptorSetDesc {
         self
     }
 
-    pub fn set_pool(mut self, pool: Arc<DescriptorPool>) -> Self {
+    pub fn set_pool(mut self, pool: Handle<DescriptorPool>) -> Self {
         self.pool = Some(pool);
         self
     }
@@ -342,7 +342,8 @@ pub struct DescriptorSet {
     device: DeviceGuard,
 
     // XXX: Need strong references for these?
-    pool: Arc<DescriptorPool>,
+    // XXX: These need to be no-guard
+    pool: Handle<DescriptorPool>,
     layout: Handle<DescriptorSetLayout>,
     // XXX: Add support for multiple descriptor sets?
     // set_index: u32,

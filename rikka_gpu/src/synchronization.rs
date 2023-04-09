@@ -60,6 +60,8 @@ impl Semaphore {
         let semaphores = [self.raw];
         let values = [value];
 
+        // log::info!("Waiting for semaphore value {}", value);
+
         let wait_info = vk::SemaphoreWaitInfo::builder()
             .semaphores(&semaphores)
             .values(&values);

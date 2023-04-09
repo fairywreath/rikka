@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    mem::ManuallyDrop,
+    time::{Duration, Instant},
+};
 
 use winit::{
     dpi,
@@ -38,6 +41,8 @@ fn main() {
 
     let mut rikka_app =
         app::RikkaApp::new(GpuDesc::new(&window, &window), args[1].as_str()).unwrap();
+    // let mut rikka_app = ManuallyDrop::new(rikka_app);
+
     rikka_app.prepare().unwrap();
 
     let mut camera_view = View::new(nalgebra::Vector3::new(0.0, 2.5, 2.0), 0.0, 0.0);
@@ -70,7 +75,14 @@ fn main() {
                         ..
                     },
                 ..
-            } => *control_flow = ControlFlow::Exit,
+            } => {
+                // unsafe {
+                // ManuallyDrop::drop(&mut rikka_app);
+                // }
+
+                *control_flow = ControlFlow::Exit;
+                // std::thread::sleep(Duration::new(2, 0));
+            }
             WindowEvent::KeyboardInput {
                 input:
                     KeyboardInput {

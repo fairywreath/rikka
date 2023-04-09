@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use anyhow::Result;
 
 use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
@@ -10,6 +15,10 @@ use rikka_gpu::{
 use crate::renderer::{gltf::*, loader::*, renderer::*};
 
 pub struct RikkaApp {
+    // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
+    // gpu: Gpu,
+    renderer: Renderer,
+
     uniform_buffer: Handle<Buffer>,
 
     zero_buffer: Handle<Buffer>,
@@ -22,11 +31,10 @@ pub struct RikkaApp {
 
     depth_image: Handle<Image>,
 
-    _thread_pool: rayon::ThreadPool,
+    gpu_transfers_thread_run: Arc<AtomicBool>,
 
-    // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
-    // gpu: Gpu,
-    renderer: Renderer,
+    // _thread_pool: rayon::ThreadPool,
+    background_thread_pool: threadpool::ThreadPool,
 }
 
 #[derive(Copy, Clone)]
@@ -148,18 +156,28 @@ impl RikkaApp {
             &mut async_loader,
         )?;
 
-        let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(3).build()?;
+        let background_thread_pool = threadpool::ThreadPool::new(3);
+        let gpu_transfers_thread_run = Arc::new(AtomicBool::new(true));
 
-        // XXX: Are these fire-and-forget threads requried to be spawned from a custom threadpool?
-        thread_pool.spawn(move || loop {
-            async_loader
-                .update()
-                .expect("Async loader failed to update!");
+        let load_resources = gpu_transfers_thread_run.clone();
+        background_thread_pool.execute(move || {
+            while load_resources.load(Ordering::Relaxed) {
+                async_loader
+                    .update()
+                    .expect("Async loader failed to update!");
+            }
         });
-        thread_pool.spawn(move || loop {
-            transfer_manager
-                .perform_transfers()
-                .expect("GPU transfer manager failed to update!");
+
+        let run_transfers = gpu_transfers_thread_run.clone();
+        background_thread_pool.execute(move || {
+            while run_transfers.load(Ordering::Relaxed) {
+                transfer_manager
+                    .perform_transfers()
+                    .expect("GPU transfer manager failed to update!");
+            }
+
+            log::info!("Transfer manager exeuction stopped");
+            transfer_manager.destroy();
         });
 
         Ok(Self {
@@ -175,7 +193,8 @@ impl RikkaApp {
             depth_image,
             zero_buffer,
 
-            _thread_pool: thread_pool,
+            gpu_transfers_thread_run,
+            background_thread_pool,
         })
     }
 
@@ -312,5 +331,20 @@ impl RikkaApp {
 
     pub fn update_projection(&mut self, projection: &Matrix4<f32>) {
         self.uniform_data.projection = projection.clone();
+    }
+}
+
+impl Drop for RikkaApp {
+    fn drop(&mut self) {
+        self.renderer.wait_idle();
+        // self.gltf_scene.mesh_draws.clear();
+        // self.gltf_scene._gpu_images.clear();
+
+        self.gpu_transfers_thread_run
+            .fetch_and(false, Ordering::Relaxed);
+
+        self.background_thread_pool.join();
+
+        log::info!("App dropped");
     }
 }
