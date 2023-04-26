@@ -8,6 +8,8 @@ use crate::{
     factory::DeviceGuard, frame::FrameThreadPoolsManager, image::*, pipeline::*, types::*,
 };
 
+// XXX: Use a better typestate system
+
 pub struct CommandPool {
     raw: vk::CommandPool,
     device: DeviceGuard,

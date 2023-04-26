@@ -52,6 +52,11 @@ impl ImageDesc {
         self.usage_flags = usage_flags;
         self
     }
+
+    pub fn set_image_type(mut self, image_type: vk::ImageType) -> Self {
+        self.image_type = image_type;
+        self
+    }
 }
 
 pub struct ImageViewDesc {

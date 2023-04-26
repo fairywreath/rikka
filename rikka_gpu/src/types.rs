@@ -1,3 +1,5 @@
+use serde_derive::{Deserialize, Serialize};
+
 use rikka_core::vk;
 
 use crate::{escape::Handle, image::Image, sampler::Sampler};
@@ -167,7 +169,7 @@ impl DepthStencilState {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum RenderPassOperation {
     DontCare,
     Load,
@@ -313,12 +315,21 @@ impl RenderingState {
 
     pub fn new_dimensionless() -> Self {
         RenderingState {
-            width: 1,
-            height: 1,
+            width: 0,
+            height: 0,
             color_attachments: Vec::new(),
             depth_attachment: None,
         }
     }
+
+    // pub fn new_dimensionless() -> Self {
+    //     RenderingState {
+    //         width: 1,
+    //         height: 1,
+    //         color_attachments: Vec::new(),
+    //         depth_attachment: None,
+    //     }
+    // }
 
     pub fn add_color_attachment(mut self, attachment: RenderColorAttachment) -> Self {
         self.color_attachments.push(attachment);
@@ -327,6 +338,16 @@ impl RenderingState {
 
     pub fn set_depth_attachment(mut self, attachment: RenderDepthStencilAttachment) -> Self {
         self.depth_attachment = Some(attachment);
+        self
+    }
+
+    pub fn set_width(mut self, width: u32) -> Self {
+        self.width = width;
+        self
+    }
+
+    pub fn set_height(mut self, height: u32) -> Self {
+        self.height = height;
         self
     }
 }
