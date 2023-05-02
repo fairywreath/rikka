@@ -135,6 +135,7 @@ impl Graph {
         }
 
         assert!(self.nodes.len() == sorted_nodes.len());
+        sorted_nodes.reverse();
         self.nodes = sorted_nodes;
 
         // Calculate ref counts of output->input resources
@@ -162,7 +163,7 @@ impl Graph {
         }
 
         // Image aliasing free list
-        let mut image_free_list = Vec::new();
+        let mut image_free_list = Vec::<rikka_gpu::escape::Handle<Image>>::new();
 
         for node_handle in &self.nodes {
             if self.builder.access_node_by_handle(&node_handle)?.enabled {
@@ -184,6 +185,7 @@ impl Graph {
                     if resource_type == ResourceType::Attachment {
                         let image_info = &resource_info.image.unwrap();
                         if !image_free_list.is_empty() {
+                            // XXX: Reuse free images
                             todo!()
                         } else {
                             let image_desc = ImageDesc::new(
@@ -236,7 +238,8 @@ impl Graph {
                     if resource_type == ResourceType::Attachment
                         || resource_type == ResourceType::Texture
                     {
-                        image_free_list.push(resource_info.image.unwrap().image.unwrap().clone());
+                        // XXX: Reuse free image
+                        // image_free_list.push(resource_info.image.unwrap().image.unwrap().clone());
                     }
                 }
             }
@@ -385,6 +388,7 @@ impl Graph {
                 render_pass.pre_render(command_buffer)?;
                 command_buffer.begin_rendering(node.rendering_state.as_ref().unwrap().clone());
                 render_pass.render(command_buffer)?;
+                command_buffer.end_rendering();
             }
 
             command_buffer.end()?;

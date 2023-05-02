@@ -52,9 +52,9 @@ impl RikkaApp {
     pub fn new(gpu_desc: GpuDesc, gltf_file_name: &str) -> Result<Self> {
         let mut renderer = Renderer::new(Gpu::new(gpu_desc)?);
 
-        let model = Matrix4::new_scaling(0.004);
+        // let model = Matrix4::new_scaling(0.004);
         let uniform_data = UniformData {
-            model,
+            model: Matrix4::identity(),
             view: Matrix4::identity(),
             projection: Matrix4::identity(),
 
@@ -201,9 +201,7 @@ impl RikkaApp {
     pub fn render(&mut self) -> Result<()> {
         self.renderer.begin_frame()?;
 
-        // Update camera uniforms
-        self.uniform_buffer
-            .copy_data_to_buffer(std::slice::from_ref(&self.uniform_data))?;
+        self.gltf_scene.scene_graph.calculate_transforms()?;
 
         let command_buffer = self.renderer.command_buffer(0)?;
 
@@ -250,9 +248,11 @@ impl RikkaApp {
             );
 
             for mesh_draw in &self.gltf_scene.mesh_draws {
-                //     // if mesh_draw.textures_incomplete {
-                //     //     continue;
-                //     // }
+                // XXX FIXME: This does not work, we cannot copy to uniform buffers in-between draw calls
+                self.uniform_data.model =
+                    self.gltf_scene.scene_graph.global_matrices[mesh_draw.scene_graph_node_index];
+                self.uniform_buffer
+                    .copy_data_to_buffer(std::slice::from_ref(&self.uniform_data))?;
 
                 command_buffer.bind_vertex_buffer(
                     mesh_draw.position_buffer.as_ref().unwrap(),

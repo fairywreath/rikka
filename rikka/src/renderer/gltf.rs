@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -11,7 +12,7 @@ use ddsfile::{Dds, DxgiFormat};
 use gltf::Gltf;
 
 use rikka_core::{
-    nalgebra::{Vector3, Vector4},
+    nalgebra::{Matrix4, Vector3, Vector4},
     vk,
 };
 use rikka_gpu::{
@@ -19,7 +20,7 @@ use rikka_gpu::{
     escape::Handle, gpu::Gpu, image::*, sampler::*,
 };
 
-use crate::renderer::{loader::*, MaterialData};
+use crate::renderer::{loader::*, scene, MaterialData};
 
 pub struct MeshDraw {
     pub position_buffer: Option<Handle<Buffer>>,
@@ -55,6 +56,8 @@ pub struct MeshDraw {
 
     // XXX: Have a descriptor cache system(ideally inside rikka_gpu)
     pub descriptor_set: Option<Arc<DescriptorSet>>,
+
+    pub scene_graph_node_index: usize,
 }
 
 impl Default for MeshDraw {
@@ -94,12 +97,15 @@ impl Default for MeshDraw {
 
             alpha_cutoff: 0.0,
             flags: 0,
+
+            scene_graph_node_index: usize::MAX,
         }
     }
 }
 
 pub struct GltfScene {
     pub mesh_draws: Vec<MeshDraw>,
+    pub scene_graph: scene::Graph,
     pub _gpu_images: Vec<Handle<Image>>,
 }
 
@@ -419,7 +425,39 @@ impl GltfScene {
 
         log::info!("Meshes count: {}", gltf_meshes.len());
 
-        for mesh in gltf_meshes {
+        // gLTF model can have multiple scene, but right now only 1 scene (the default one) is used
+        // let gltf_scenes = gltf_file.scenes().collect::<Vec<_>>();
+
+        // XXX: Do topological sort approach?
+        let gltf_nodes = gltf_file.nodes();
+        log::debug!("gLTF number of nodes: {}", gltf_nodes.len());
+
+        let mut scene_graph = scene::Graph::with_num_nodes(gltf_nodes.len());
+
+        // Set scene graph hierarchy with level order traversal/BFS
+        let root_scene = gltf_file.default_scene().unwrap();
+        log::debug!("gLTF default scene: {}", root_scene.index());
+
+        let mut nodes_to_visit = VecDeque::new();
+        for node in root_scene.nodes() {
+            scene_graph.set_hierarchy(node.index(), scene::INVALID_INDEX, 0);
+            nodes_to_visit.push_back(node);
+        }
+
+        let mut current_level = 0;
+        while !nodes_to_visit.is_empty() {
+            let node = nodes_to_visit.pop_front().unwrap();
+
+            // Find to set this now as we will be traversing all of the nodes
+            scene_graph.set_local_matrix(node.index(), Matrix4::from(node.transform().matrix()));
+
+            current_level += 1;
+            for child in node.children() {
+                scene_graph.set_hierarchy(child.index(), node.index(), current_level);
+                nodes_to_visit.push_back(child);
+            }
+
+            let mesh = node.mesh().unwrap();
             for primitive in mesh.primitives() {
                 let mut mesh_draw = MeshDraw::default();
 
@@ -571,12 +609,15 @@ impl GltfScene {
                     )?,
                 ));
 
+                mesh_draw.scene_graph_node_index = node.index();
+
                 mesh_draws.push(mesh_draw);
             }
         }
 
         Ok(Self {
             mesh_draws,
+            scene_graph,
             _gpu_images: gpu_images,
         })
     }
