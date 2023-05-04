@@ -1,7 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
-
 use anyhow::Result;
-use parking_lot::Mutex;
 
 use rikka_core::vk;
 use rikka_gpu::{
@@ -15,21 +12,13 @@ use rikka_gpu::{
 use crate::{builder::*, types::*};
 
 pub struct Graph {
-    builder: Builder,
-    nodes: Vec<NodeHandle>,
-    // XXX: Change this to mutable
-    gpu: Arc<Mutex<Gpu>>,
+    pub(crate) builder: Builder,
+    pub(crate) nodes: Vec<NodeHandle>,
 }
 
 impl Graph {
-    pub fn new(builder: Builder, gpu: Arc<Mutex<Gpu>>) -> Result<Self> {
-        let graph = Self {
-            builder,
-            nodes: Vec::new(),
-            gpu,
-        };
-
-        Ok(graph)
+    pub fn new(builder: Builder, nodes: Vec<NodeHandle>) -> Self {
+        Self { builder, nodes }
     }
 
     pub fn reset(&mut self) {
@@ -50,7 +39,7 @@ impl Graph {
         Ok(())
     }
 
-    pub fn compile(&mut self) -> Result<()> {
+    pub fn compile(&mut self, gpu: &mut Gpu) -> Result<()> {
         // Clear all node edges
         for node_handle in &self.nodes {
             self.builder
@@ -166,7 +155,7 @@ impl Graph {
         let mut image_free_list = Vec::<rikka_gpu::escape::Handle<Image>>::new();
 
         for node_handle in &self.nodes {
-            if self.builder.access_node_by_handle(&node_handle)?.enabled {
+            if !self.builder.access_node_by_handle(&node_handle)?.enabled {
                 continue;
             }
 
@@ -176,9 +165,13 @@ impl Graph {
             };
 
             for output_handle in outputs {
-                let (resource_info, resource_type) = {
+                let (resource_info, resource_type, resource_name) = {
                     let resource = self.builder.access_resource_by_handle(&output_handle)?;
-                    (resource.info.clone(), resource.resource_type)
+                    (
+                        resource.info.clone(),
+                        resource.resource_type,
+                        resource.name.as_str(),
+                    )
                 };
 
                 if !resource_info.external {
@@ -195,10 +188,10 @@ impl Graph {
                             )
                             .set_format(image_info.format)
                             .set_image_type(vk::ImageType::TYPE_2D)
-                            // Render target
-                            .set_usage_flags(vk::ImageUsageFlags::COLOR_ATTACHMENT);
+                            .set_usage_flags(image_info.usage_flags);
 
-                            let image = self.gpu.lock().create_image(image_desc)?;
+                            log::trace!("Creating GPU image for node output {}", resource_name);
+                            let image = gpu.create_image(image_desc)?;
 
                             self.builder
                                 .access_resource_mut_by_handle(&output_handle)?
@@ -277,10 +270,14 @@ impl Graph {
         for output in &node.outputs {
             let resource = self.builder.access_resource_by_handle(&output)?;
             if resource.resource_type == ResourceType::Attachment {
-                // XXX: Consider other depth formats as well
+                log::trace!(
+                    "Creating (vulkan dynamic) rendering state for node {} output {}",
+                    &node.name,
+                    &resource.name
+                );
                 let image_info = resource.info.image.as_ref().unwrap();
 
-                if image_info.format == vk::Format::D32_SFLOAT {
+                if format_has_depth(image_info.format) {
                     rendering_state = rendering_state.set_depth_attachment(
                         RenderDepthStencilAttachment::new()
                             .set_format(image_info.format)
@@ -360,8 +357,7 @@ impl Graph {
                     ResourceType::Attachment => {
                         let image_info = output_resource.info.image.as_ref().unwrap();
 
-                        // XXX: Handle other possible depth types as well
-                        if image_info.format == vk::Format::D32_SFLOAT {
+                        if format_has_depth(image_info.format) {
                             barriers = barriers.add_image(
                                 image_info.image.as_ref().unwrap(),
                                 ResourceState::UNDEFINED,

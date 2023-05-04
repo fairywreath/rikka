@@ -196,7 +196,6 @@ impl Drop for Device {
     fn drop(&mut self) {
         unsafe {
             log::info!("Device dropped");
-            println!("Device dropped");
             // XXX: Queue wait idle here for ALL queues
             // self.allocator.
             ManuallyDrop::drop(&mut self.allocator);

@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
+use parking_lot::Mutex;
 
 use crate::{graph::*, types::*};
 
@@ -160,7 +161,7 @@ impl Builder {
         }
     }
 
-    // pub fn build(self) -> Result<Graph> {
-    //     Graph::new(self)
-    // }
+    pub fn build(self, nodes: Vec<NodeHandle>) -> Graph {
+        Graph::new(self, nodes)
+    }
 }

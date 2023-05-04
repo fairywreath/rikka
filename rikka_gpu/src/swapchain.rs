@@ -208,7 +208,8 @@ impl Swapchain {
         let (image_index, is_suboptimal) = unsafe {
             self.ash_swapchain.acquire_next_image(
                 self.vulkan_swapchain,
-                u64::MAX,
+                // XXX: Investigate validation error
+                u64::MAX - 1,
                 signal_semaphore.raw(),
                 vk::Fence::null(),
             )?

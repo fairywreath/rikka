@@ -6,6 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rikka_core = { path = "../rikka_core" }
+rikka_graph = { path = "../rikka_graph"}
+rikka_gpu = { path = "../rikka_gpu" }
+rikka_shader = { path = "../rikka_shader"}
+
 env_logger = "0.10.0"
 log = "0.4.17"
 winit = "0.27.5"
@@ -13,10 +18,6 @@ anyhow = "1.0.68"
 image = "0.24.5"
 gltf = "1.1.0"
 ddsfile = "0.5.1"
-
-rikka_core = { path = "../rikka_core" }
-rikka_gpu = { path = "../rikka_gpu" }
-rikka_shader = { path = "../rikka_shader"}
 bitflags = "2.0.2"
 rayon = "1.7.0"
 crossbeam-channel = "0.5.7"

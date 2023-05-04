@@ -142,7 +142,10 @@ impl Graph {
         self.set_child_and_sibling_indices(node, parent);
     }
 
+    /// Set parent's child and sibling indices
     fn set_child_and_sibling_indices(&mut self, node: usize, parent: usize) {
+        self.nodes_hierarchy[node].next_sibling = INVALID_INDEX;
+
         if parent != INVALID_INDEX {
             let first_child = self.nodes_hierarchy[parent].first_child;
 

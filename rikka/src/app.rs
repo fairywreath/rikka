@@ -180,6 +180,10 @@ impl RikkaApp {
             transfer_manager.destroy();
         });
 
+        // Test render graph compilation
+        let mut deferred_graph = rikka_graph::parser::parse_from_file("data/deferred_graph.json")?;
+        deferred_graph.compile(renderer.gpu_mut())?;
+
         Ok(Self {
             renderer,
 
@@ -240,7 +244,7 @@ impl RikkaApp {
             command_buffer.begin_rendering(rendering_state);
 
             command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
-            // //    XXX: Bind this automatically in the GPU layer
+            //    XXX: Bind this automatically in the GPU layer
             command_buffer.bind_descriptor_set(
                 self.renderer.gpu().bindless_descriptor_set().as_ref(),
                 self.graphics_pipeline.raw_layout(),
@@ -292,8 +296,6 @@ impl RikkaApp {
                 );
 
                 command_buffer.draw_indexed(mesh_draw.count, 1, 0, 0, 0);
-
-                // println!("CAlling draw with index count {}", mesh_draw.count);
             }
 
             command_buffer.end_rendering();

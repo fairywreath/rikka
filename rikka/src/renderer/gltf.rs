@@ -444,16 +444,18 @@ impl GltfScene {
             nodes_to_visit.push_back(node);
         }
 
-        let mut current_level = 0;
         while !nodes_to_visit.is_empty() {
             let node = nodes_to_visit.pop_front().unwrap();
 
             // Find to set this now as we will be traversing all of the nodes
             scene_graph.set_local_matrix(node.index(), Matrix4::from(node.transform().matrix()));
 
-            current_level += 1;
             for child in node.children() {
-                scene_graph.set_hierarchy(child.index(), node.index(), current_level);
+                scene_graph.set_hierarchy(
+                    child.index(),
+                    node.index(),
+                    scene_graph.nodes_hierarchy[node.index()].level + 1,
+                );
                 nodes_to_visit.push_back(child);
             }
 

@@ -1417,6 +1417,7 @@ dependencies = [
  "rayon",
  "rikka_core",
  "rikka_gpu",
+ "rikka_graph",
  "rikka_shader",
  "threadpool",
  "winit",
@@ -1464,6 +1465,10 @@ dependencies = [
  "serde_derive",
  "serde_json",
 ]
+
+[[package]]
+name = "rikka_renderer"
+version = "0.1.0"
 
 [[package]]
 name = "rikka_shader"

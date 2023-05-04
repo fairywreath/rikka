@@ -26,12 +26,12 @@ impl RenderTechniqueDesc {
     }
 }
 
-pub struct RenderPass {
+pub struct RenderTechniquePass {
     graphics_pipeline: Handle<GraphicsPipeline>,
 }
 
 pub struct RenderTechnique {
-    passes: Vec<RenderPass>,
+    passes: Vec<RenderTechniquePass>,
 }
 
 pub struct MaterialDesc {
@@ -71,19 +71,23 @@ impl Renderer {
     }
 
     pub fn begin_frame(&mut self) -> Result<()> {
-        // log::debug!("Renderer begin frame called");
-
-        // XXX: Handle swapchain recreation
         self.gpu.new_frame()?;
-        self.gpu.swapchain_acquire_next_image()?;
+        if let Err(_) = self.gpu.swapchain_acquire_next_image() {
+            self.gpu.recreate_swapchain()?;
+            self.gpu.advance_frame_counters();
+        }
+
         Ok(())
     }
 
     pub fn end_frame(&mut self) -> Result<()> {
-        // XXX: Handle swapchain recreation
-        // XXX: Submit queued command buffers
         self.gpu.submit_queued_graphics_command_buffers()?;
-        self.gpu.present()?;
+
+        self.gpu.present().unwrap_or_else(|_| {
+            self.gpu.wait_idle();
+            false
+        });
+
         Ok(())
     }
 
@@ -125,7 +129,7 @@ impl Renderer {
 
         let passes = graphics_pipelines
             .into_iter()
-            .map(|graphics_pipeline| RenderPass { graphics_pipeline })
+            .map(|graphics_pipeline| RenderTechniquePass { graphics_pipeline })
             .collect::<Vec<_>>();
 
         Ok(Arc::new(RenderTechnique { passes }))

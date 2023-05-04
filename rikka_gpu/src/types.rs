@@ -169,7 +169,7 @@ impl DepthStencilState {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RenderPassOperation {
     DontCare,
     Load,

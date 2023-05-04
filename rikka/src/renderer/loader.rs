@@ -10,6 +10,7 @@ struct ImageFileLoadRequest {
 
 pub struct AsynchronousLoader {
     image_file_load_requests: Vec<ImageFileLoadRequest>,
+    /// Sender to send loaded images
     image_file_load_complete_sender: Sender<ImageUploadRequest>,
 }
 

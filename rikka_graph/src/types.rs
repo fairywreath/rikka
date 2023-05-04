@@ -41,7 +41,7 @@ pub type NodeHandle = ResourceHandle;
 
 #[derive(Clone)]
 pub struct BufferInfo {
-    pub buffer: Handle<Buffer>,
+    pub buffer: Option<Handle<Buffer>>,
 
     // XXX: Do we need these(already stored inside `Buffer`)?
     pub size: u32,
@@ -64,6 +64,16 @@ pub struct ResourceInfo {
     pub buffer: Option<BufferInfo>,
     pub image: Option<ImageInfo>,
     pub external: bool,
+}
+
+impl Default for ResourceInfo {
+    fn default() -> Self {
+        Self {
+            buffer: None,
+            image: None,
+            external: false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -139,15 +149,14 @@ impl Default for Resource {
 
 pub struct InputDesc {
     pub resource_type: ResourceType,
-    pub info: ResourceInfo,
     /// Name of the output resource this input originates from
     pub name: String,
 }
 
 pub struct OutputDesc {
     pub resource_type: ResourceType,
-    pub info: ResourceInfo,
     pub name: String,
+    pub info: ResourceInfo,
 }
 
 pub struct NodeDesc {
