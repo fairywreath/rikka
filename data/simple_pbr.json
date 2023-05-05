@@ -1,0 +1,67 @@
+{
+    "name": "simpler_pbr",
+    "pipelines": [
+        {
+            "name": "main_pipeline",
+            "render_pass": "swapchain",
+            "shaders": [
+                {
+                    "shader_type": "Vertex",
+                    "file_name": "shaders/simple_pbr.vert"
+                },
+                {
+                    "shader_type": "Fragment",
+                    "file_name": "shaders/simple_pbr.frag"
+                }
+            ],
+            "vertex_inputs": [
+                {
+                    "attribute_location": 0,
+                    "attribute_binding": 0,
+                    "attribute_offset": 0,
+                    "attribute_format": 106,
+                    "stream_binding": 0,
+                    "stream_stride": 12,
+                    "stream_rate": "Vertex"
+                },
+                {
+                    "attribute_location": 1,
+                    "attribute_binding": 1,
+                    "attribute_offset": 0,
+                    "attribute_format": 103,
+                    "stream_binding": 1,
+                    "stream_stride": 8,
+                    "stream_rate": "Vertex"
+                },
+                {
+                    "attribute_location": 2,
+                    "attribute_binding": 2,
+                    "attribute_offset": 0,
+                    "attribute_format": 106,
+                    "stream_binding": 2,
+                    "stream_stride": 12,
+                    "stream_rate": "Vertex"
+                },
+                {
+                    "attribute_location": 3,
+                    "attribute_binding": 3,
+                    "attribute_offset": 0,
+                    "attribute_format": 109,
+                    "stream_binding": 3,
+                    "stream_stride": 16,
+                    "stream_rate": "Vertex"
+                }
+            ],
+            "depth_state": {
+                "write_enable": true,
+                "test_enable": true,
+                "compare_op": "LessOrEqual"
+            },
+            "rasterization_state": {
+                "cull_mode": "Back",
+                "front_face": "CounterClockwise",
+                "polygon_mode": "Fill"
+            }
+        }
+    ]
+}

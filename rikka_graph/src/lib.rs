@@ -3,13 +3,12 @@ pub mod graph;
 pub mod parser;
 pub mod types;
 
-use types::*;
-
 #[cfg(test)]
 mod tests {
     use rikka_gpu::types::RenderPassOperation;
 
     use super::*;
+    use types::*;
 
     #[test]
     fn test_parse() {

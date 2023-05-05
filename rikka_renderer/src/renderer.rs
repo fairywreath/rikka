@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use rikka_core::vk;
 use rikka_gpu::{
@@ -8,6 +8,9 @@ use rikka_gpu::{
 };
 
 pub use rikka_gpu::escape::Handle;
+use rikka_graph::graph::Graph;
+
+use crate::technique::parser as technique_parser;
 
 pub struct RenderTechniqueDesc {
     graphics_pipelines: Vec<GraphicsPipelineDesc>,
@@ -27,14 +30,16 @@ impl RenderTechniqueDesc {
 }
 
 pub struct RenderTechniquePass {
-    graphics_pipeline: Handle<GraphicsPipeline>,
+    // XXX: Properly set struct member visiblity for this crate
+    pub graphics_pipeline: Handle<GraphicsPipeline>,
 }
 
 pub struct RenderTechnique {
-    passes: Vec<RenderTechniquePass>,
+    pub passes: Vec<RenderTechniquePass>,
 }
 
 pub struct MaterialDesc {
+    // XXX: Currently not used
     render_index: u32,
     render_technique: Arc<RenderTechnique>,
 }
@@ -50,7 +55,9 @@ impl MaterialDesc {
 
 pub struct Material {
     render_index: u32,
-    render_technique: Arc<RenderTechnique>,
+    // XXX: Make nice APi and remove `pub` here
+    pub render_technique: Arc<RenderTechnique>,
+    pub name: String,
 }
 
 pub struct Renderer {
@@ -135,6 +142,17 @@ impl Renderer {
         Ok(Arc::new(RenderTechnique { passes }))
     }
 
+    pub fn create_technique_from_file(
+        &self,
+        file_name: &str,
+        render_graph: &Graph,
+    ) -> Result<Arc<RenderTechnique>> {
+        let desc = technique_parser::parse_from_file(file_name, self, render_graph)
+            .context("Failed to parse render technique file")?;
+
+        self.create_technique(desc)
+    }
+
     pub fn create_material(&self, desc: MaterialDesc) -> Result<Arc<Material>> {
         Ok(Arc::new(Material {
             render_index: desc.render_index,
@@ -167,7 +185,6 @@ impl Renderer {
     /// XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
     ///      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
     ///      object destruction until the end of the current frame
-    ///
     ///      Currently we just wait idle before dropping any resources but this needs to be removed
     pub fn wait_idle(&self) {
         self.gpu.wait_idle();

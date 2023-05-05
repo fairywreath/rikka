@@ -3,14 +3,13 @@ use std::sync::{
     Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use rikka_core::nalgebra::{Matrix4, Vector3, Vector4};
 
 use rikka_core::vk;
-use rikka_gpu::{
-    barriers::*, buffer::*, escape::*, gpu::*, image::*, pipeline::*, shader_state::*, types::*,
-};
+use rikka_gpu::{barriers::*, buffer::*, escape::*, gpu::*, image::*, types::*};
+use rikka_graph::graph::Graph;
 
 use rikka_renderer::{gltf::*, loader::asynchronous::AsynchronousLoader, renderer::*};
 
@@ -23,7 +22,8 @@ pub struct RikkaApp {
 
     zero_buffer: Handle<Buffer>,
 
-    graphics_pipeline: Handle<GraphicsPipeline>,
+    render_technique: Arc<RenderTechnique>,
+    render_graph: Graph,
 
     uniform_data: UniformData,
 
@@ -89,60 +89,24 @@ impl RikkaApp {
             ResourceState::DEPTH_WRITE,
         )?;
 
-        let graphics_pipeline: Handle<GraphicsPipeline> = {
-            let shader_state_desc = ShaderStateDesc::new()
-                .add_stage(ShaderStageDesc::new_from_source_file(
-                    "shaders/simple_pbr.vert",
-                    ShaderStageType::Vertex,
-                ))
-                .add_stage(ShaderStageDesc::new_from_source_file(
-                    "shaders/simple_pbr.frag",
-                    ShaderStageType::Fragment,
-                ));
+        // Test render graph compilation
+        let mut render_graph = rikka_graph::parser::parse_from_file("data/deferred_graph.json")?;
+        render_graph.compile(renderer.gpu_mut())?;
+        for node in &render_graph.nodes {
+            log::info!(
+                "Node name: {}",
+                render_graph
+                    .builder
+                    .access_node_by_handle(node)
+                    .unwrap()
+                    .name
+                    .as_str(),
+            );
+        }
 
-            let vertex_input_state = VertexInputState::new()
-                // Position
-                .add_vertex_attribute(0, 0, 0, vk::Format::R32G32B32_SFLOAT)
-                .add_vertex_stream(0, 12, vk::VertexInputRate::VERTEX)
-                // Tex coords
-                .add_vertex_attribute(1, 1, 0, vk::Format::R32G32_SFLOAT)
-                .add_vertex_stream(1, 8, vk::VertexInputRate::VERTEX)
-                // Normals
-                .add_vertex_attribute(2, 2, 0, vk::Format::R32G32B32_SFLOAT)
-                .add_vertex_stream(2, 12, vk::VertexInputRate::VERTEX)
-                // Tangents
-                .add_vertex_attribute(3, 3, 0, vk::Format::R32G32B32A32_SFLOAT)
-                .add_vertex_stream(3, 16, vk::VertexInputRate::VERTEX);
-
-            renderer
-                .gpu()
-                .create_graphics_pipeline(
-                    GraphicsPipelineDesc::new()
-                        // .set_shader_stages(shader_state.vulkan_shader_stages())
-                        .set_shader_state(shader_state_desc)
-                        .set_extent(renderer.extent().width, renderer.extent().height)
-                        .set_rendering_state(
-                            RenderingState::new_dimensionless()
-                                .add_color_attachment(
-                                    RenderColorAttachment::new()
-                                        .set_format(renderer.gpu().swapchain().format()),
-                                )
-                                .set_depth_attachment(
-                                    RenderDepthStencilAttachment::new()
-                                        .set_format(vk::Format::D32_SFLOAT),
-                                ),
-                        )
-                        // .add_descriptor_set_layout(descriptor_set_layout.raw())
-                        // .add_descriptor_set_layout(gpu.bindless_descriptor_set_layout().raw())
-                        .set_vertex_input_state(vertex_input_state)
-                        .set_rasterization_state(
-                            RasterizationState::new()
-                                .set_polygon_mode(vk::PolygonMode::FILL)
-                                .set_cull_mode(vk::CullModeFlags::NONE),
-                        ),
-                )?
-                .into()
-        };
+        let render_technique = renderer
+            .create_technique_from_file("data/simple_pbr.json", &render_graph)
+            .context("Failed to create render technique from file")?;
 
         let mut transfer_manager = renderer.gpu().new_transfer_manager()?;
         let mut async_loader =
@@ -152,7 +116,10 @@ impl RikkaApp {
             &mut renderer.gpu_mut(),
             gltf_file_name,
             &uniform_buffer,
-            &graphics_pipeline.descriptor_set_layouts()[0],
+            // &graphics_pipeline.descriptor_set_layouts()[0],
+            &render_technique.passes[0]
+                .graphics_pipeline
+                .descriptor_set_layouts()[0],
             &mut async_loader,
         )?;
 
@@ -180,25 +147,11 @@ impl RikkaApp {
             transfer_manager.destroy();
         });
 
-        // Test render graph compilation
-        let mut deferred_graph = rikka_graph::parser::parse_from_file("data/deferred_graph.json")?;
-        deferred_graph.compile(renderer.gpu_mut())?;
-        for node in &deferred_graph.nodes {
-            log::info!(
-                "Node name: {}",
-                deferred_graph
-                    .builder
-                    .access_node_by_handle(node)
-                    .unwrap()
-                    .name
-                    .as_str(),
-            );
-        }
-
         Ok(Self {
             renderer,
 
-            graphics_pipeline,
+            render_technique,
+            render_graph,
 
             uniform_buffer,
             uniform_data,
@@ -221,6 +174,8 @@ impl RikkaApp {
         let command_buffer = self.renderer.command_buffer(0)?;
 
         let swapchain = self.renderer.gpu().swapchain();
+
+        let graphics_pipeline = &self.render_technique.passes[0].graphics_pipeline;
 
         {
             command_buffer.begin()?;
@@ -254,11 +209,11 @@ impl RikkaApp {
                     .add_color_attachment(color_attachment);
             command_buffer.begin_rendering(rendering_state);
 
-            command_buffer.bind_graphics_pipeline(&self.graphics_pipeline);
+            command_buffer.bind_graphics_pipeline(graphics_pipeline);
             //    XXX: Bind this automatically in the GPU layer
             command_buffer.bind_descriptor_set(
                 self.renderer.gpu().bindless_descriptor_set().as_ref(),
-                self.graphics_pipeline.raw_layout(),
+                graphics_pipeline.raw_layout(),
                 1,
             );
 
@@ -302,7 +257,7 @@ impl RikkaApp {
 
                 command_buffer.bind_descriptor_set(
                     mesh_draw.descriptor_set.as_ref().unwrap(),
-                    self.graphics_pipeline.raw_layout(),
+                    graphics_pipeline.raw_layout(),
                     0,
                 );
 

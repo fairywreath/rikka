@@ -75,6 +75,11 @@ impl GraphicsPipelineDesc {
         self
     }
 
+    pub fn set_depth_stencil_state(mut self, depth_stencil_state: DepthStencilState) -> Self {
+        self.depth_stencil_state = depth_stencil_state;
+        self
+    }
+
     // Not used as shader and descriptor layout information is obtained through shader reflection.
     // pub fn set_shader_stages(
     //     mut self,

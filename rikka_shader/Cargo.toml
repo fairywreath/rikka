@@ -6,8 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.68"
-log = "0.4.17"
+rikka_core = { path = "../rikka_core" }
 spirv-reflect = { path = "../../spirv-reflect-rs" }
 
-rikka_core = { path = "../rikka_core" }
+anyhow = "1.0.68"
+log = "0.4.17"
+serde = "1.0.159"
+serde_derive = "1.0.159"
+

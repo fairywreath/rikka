@@ -407,6 +407,10 @@ impl Graph {
         todo!()
     }
 
+    pub fn access_node_by_name(&self, name: &str) -> Result<&Node> {
+        self.builder.access_node_by_name(name)
+    }
+
     pub fn add_node(&mut self, desc: NodeDesc) {
         todo!()
     }

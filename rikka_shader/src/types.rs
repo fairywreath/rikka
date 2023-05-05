@@ -1,8 +1,10 @@
 use std::hash::Hash;
 
+use serde_derive::{Deserialize, Serialize};
+
 use rikka_core::vk;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ShaderStageType {
     Vertex,
     Fragment,

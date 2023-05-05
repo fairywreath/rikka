@@ -153,6 +153,14 @@ impl Builder {
             })
     }
 
+    pub fn access_node_by_name(&self, name: &str) -> Result<&Node> {
+        if let Some(index) = self.node_cache.node_map.get(name) {
+            self.access_node_by_handle(&NodeHandle::new(*index))
+        } else {
+            Err(anyhow::anyhow!("Failed to retrieve node by name"))
+        }
+    }
+
     pub fn access_node_mut_by_name(&mut self, name: &str) -> Result<&mut Node> {
         if let Some(index) = self.node_cache.node_map.get(name) {
             self.access_node_mut_by_handle(&NodeHandle::new(*index))

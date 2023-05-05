@@ -19,4 +19,3 @@ rikka_core = { path = "../rikka_core" }
 rikka_shader = { path = "../rikka_shader" }
 serde = "1.0.159"
 serde_derive = "1.0.159"
-serde_json = "1.0.95"

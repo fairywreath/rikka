@@ -1442,7 +1442,6 @@ dependencies = [
  "rikka_shader",
  "serde",
  "serde_derive",
- "serde_json",
 ]
 
 [[package]]
@@ -1475,6 +1474,9 @@ dependencies = [
  "rikka_core",
  "rikka_gpu",
  "rikka_graph",
+ "serde",
+ "serde_derive",
+ "serde_json",
  "winit",
 ]
 
@@ -1485,6 +1487,8 @@ dependencies = [
  "anyhow",
  "log",
  "rikka_core",
+ "serde",
+ "serde_derive",
  "spirv-reflect",
 ]
 
