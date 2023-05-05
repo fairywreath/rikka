@@ -1,14 +1,7 @@
-use std::{
-    collections::VecDeque,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-use crossbeam_channel::Sender;
+use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Instant};
 
 use anyhow::{anyhow, Context, Result};
-use ddsfile::{Dds, DxgiFormat};
+use ddsfile::DxgiFormat;
 use gltf::Gltf;
 
 use rikka_core::{
@@ -20,7 +13,7 @@ use rikka_gpu::{
     escape::Handle, gpu::Gpu, image::*, sampler::*,
 };
 
-use crate::renderer::{loader::*, scene, MaterialData};
+use crate::{loader::asynchronous::*, scene, types::*};
 
 pub struct MeshDraw {
     pub position_buffer: Option<Handle<Buffer>>,

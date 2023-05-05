@@ -12,7 +12,7 @@ use rikka_gpu::{
     barriers::*, buffer::*, escape::*, gpu::*, image::*, pipeline::*, shader_state::*, types::*,
 };
 
-use crate::renderer::{gltf::*, loader::*, renderer::*};
+use rikka_renderer::{gltf::*, loader::asynchronous::AsynchronousLoader, renderer::*};
 
 pub struct RikkaApp {
     // XXX: This needs to be the last object destructed (and is technically unsafe!). Make this nicer :)
@@ -183,6 +183,17 @@ impl RikkaApp {
         // Test render graph compilation
         let mut deferred_graph = rikka_graph::parser::parse_from_file("data/deferred_graph.json")?;
         deferred_graph.compile(renderer.gpu_mut())?;
+        for node in &deferred_graph.nodes {
+            log::info!(
+                "Node name: {}",
+                deferred_graph
+                    .builder
+                    .access_node_by_handle(node)
+                    .unwrap()
+                    .name
+                    .as_str(),
+            );
+        }
 
         Ok(Self {
             renderer,

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Sender;
 
 use rikka_gpu::{escape::Handle, image::Image, transfer::ImageUploadRequest};
 
@@ -21,7 +21,7 @@ fn load_image_data(file_name: &str) -> Result<Vec<u8>> {
         Ok(dds.get_data(0)?.to_vec())
     } else {
         let dynamic_image = image::load_from_memory(&data)?;
-        // XXX: How expensive/slow is this? Maybe this conversion should not be done at all
+        // XXX: How expensive/slow is this? Maybe this conversion should be preemptively done elsewhere
         let texture_rgba8 = dynamic_image.clone().into_rgba8();
 
         // log::info!(

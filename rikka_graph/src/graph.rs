@@ -12,8 +12,10 @@ use rikka_gpu::{
 use crate::{builder::*, types::*};
 
 pub struct Graph {
-    pub(crate) builder: Builder,
-    pub(crate) nodes: Vec<NodeHandle>,
+    // pub(crate) builder: Builder,
+    // pub(crate) nodes: Vec<NodeHandle>,
+    pub builder: Builder,
+    pub nodes: Vec<NodeHandle>,
 }
 
 impl Graph {

@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+mod app;
+mod camera;
+
+use std::time::Instant;
 
 use winit::{
     dpi,
@@ -10,10 +13,7 @@ use winit::{
 use rikka_core::nalgebra;
 use rikka_gpu::gpu::GpuDesc;
 
-use crate::renderer::camera::*;
-
-mod app;
-mod renderer;
+use camera::*;
 
 fn main() {
     let env = env_logger::Env::default()

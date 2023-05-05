@@ -1407,18 +1407,12 @@ name = "rikka"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitflags 2.1.0",
- "crossbeam-channel",
- "ddsfile",
  "env_logger",
- "gltf",
- "image",
  "log",
- "rayon",
  "rikka_core",
  "rikka_gpu",
  "rikka_graph",
- "rikka_shader",
+ "rikka_renderer",
  "threadpool",
  "winit",
 ]
@@ -1469,6 +1463,20 @@ dependencies = [
 [[package]]
 name = "rikka_renderer"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitflags 2.1.0",
+ "crossbeam-channel",
+ "ddsfile",
+ "env_logger",
+ "gltf",
+ "image",
+ "log",
+ "rikka_core",
+ "rikka_gpu",
+ "rikka_graph",
+ "winit",
+]
 
 [[package]]
 name = "rikka_shader"

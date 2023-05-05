@@ -2,13 +2,6 @@ use bitflags::bitflags;
 
 use rikka_core::nalgebra::{Matrix4, Vector4};
 
-pub mod camera;
-pub mod gltf;
-pub mod loader;
-pub mod pass;
-pub mod renderer;
-pub mod scene;
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct MaterialData {

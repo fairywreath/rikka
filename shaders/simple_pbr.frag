@@ -135,6 +135,6 @@ void main()
 
     vec3 material_color = mix(fresnel_mix, conductor_fresnel, metalness);
     material_color.rgb = encode_srgb(material_color.rgb);
-    // out_FragColor = vec4(material_color, base_color.a);
-    out_FragColor = base_color;
+    out_FragColor = vec4(material_color, base_color.a);
+    // out_FragColor = base_color;
 }

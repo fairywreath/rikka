@@ -1,5 +1,5 @@
 [package]
-name = "rikka"
+name = "rikka_renderer"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,10 +9,13 @@ edition = "2021"
 rikka_core = { path = "../rikka_core" }
 rikka_graph = { path = "../rikka_graph"}
 rikka_gpu = { path = "../rikka_gpu" }
-rikka_renderer = { path = "../rikka_renderer" }
 
 env_logger = "0.10.0"
 log = "0.4.17"
 winit = "0.27.5"
 anyhow = "1.0.68"
-threadpool = "1.8.1"
+image = "0.24.5"
+gltf = "1.1.0"
+ddsfile = "0.5.1"
+bitflags = "2.0.2"
+crossbeam-channel = "0.5.7"

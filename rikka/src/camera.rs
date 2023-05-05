@@ -78,9 +78,6 @@ impl View {
 
 pub struct Projection {
     aspect: f32,
-    width: u32,
-    height: u32,
-
     fovy: f32,
     znear: f32,
     zfar: f32,
@@ -91,8 +88,6 @@ impl Projection {
     pub fn new(width: u32, height: u32, fovy: f32, znear: f32, zfar: f32) -> Self {
         let mut proj = Self {
             aspect: width as f32 / height as f32,
-            width,
-            height,
             fovy,
             znear,
             zfar,
@@ -108,8 +103,6 @@ impl Projection {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.aspect = width as f32 / height as f32;
-        self.width = width;
-        self.height = height
     }
 
     fn calculate_matrix(&mut self) {
