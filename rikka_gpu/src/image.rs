@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use anyhow::{Context, Result};
 use gpu_allocator::{
@@ -105,7 +105,7 @@ pub struct Image {
 
     // XXX: We do not actually track this and the images are imutable
     resource_state: ResourceState,
-    sampler: Option<Handle<Sampler>>,
+    sampler: RwLock<Option<Handle<Sampler>>>,
 
     // XXX: This struct contains to much stuff...move/remove some of these?
     format: vk::Format,
@@ -205,7 +205,7 @@ impl Image {
             array_layers: desc.array_layer_count,
             subresource_range,
             image_type: desc.image_type,
-            sampler: None,
+            sampler: RwLock::new(None),
             owning: true,
             bindless_index: u32::MAX,
         })
@@ -254,7 +254,7 @@ impl Image {
                 .layer_count(1)
                 .build(),
             image_type: vk::ImageType::TYPE_2D,
-            sampler: None,
+            sampler: RwLock::new(None),
             owning: false,
             bindless_index: INVALID_BINDLESS_TEXTURE_INDEX,
         }
@@ -295,15 +295,15 @@ impl Image {
     }
 
     pub fn has_linked_sampler(&self) -> bool {
-        self.sampler.is_some()
+        self.sampler.read().is_some()
     }
 
     pub fn linked_sampler(&self) -> Option<Handle<Sampler>> {
-        self.sampler.clone()
+        self.sampler.read().clone()
     }
 
-    pub fn set_linked_sampler(&mut self, sampler: Handle<Sampler>) {
-        self.sampler = Some(sampler);
+    pub fn set_linked_sampler(&self, sampler: Handle<Sampler>) {
+        *self.sampler.write() = Some(sampler);
     }
 
     pub fn width(&self) -> u32 {

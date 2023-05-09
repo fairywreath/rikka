@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_derive::{Deserialize, Serialize};
 
 use rikka_core::vk;
@@ -127,6 +127,20 @@ impl Resource {
 
     pub fn remove_ref_count(&mut self, value: i32) {
         self.ref_count -= value;
+    }
+
+    pub fn gpu_image(&self) -> Result<Handle<Image>> {
+        self.info
+            .image
+            .as_ref()
+            .context("Resource is not an image")?
+            .image
+            .clone()
+            .context("Image resource does not contain a GPU image handle")
+    }
+
+    pub fn gpu_image_bindless_index(&self) -> Result<u32> {
+        Ok(self.gpu_image()?.bindless_index())
     }
 }
 

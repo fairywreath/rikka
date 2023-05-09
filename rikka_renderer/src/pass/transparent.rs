@@ -7,7 +7,6 @@ use crate::scene_renderer::types::*;
 
 pub struct TransparentPass {
     mesh_instances: Vec<MeshInstance>,
-    // renderer: Arc<Renderer>,
 }
 
 impl RenderPass for TransparentPass {

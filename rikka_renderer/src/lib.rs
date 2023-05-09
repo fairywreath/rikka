@@ -1,18 +1,12 @@
-pub mod gltf;
 pub mod loader;
 pub mod pass;
 pub mod renderer;
 pub mod scene;
 pub mod scene_renderer;
-pub mod technique;
-pub mod types;
 
 #[cfg(test)]
 mod tests {
-    use crate::technique::parser::Technique;
-
-    use super::*;
-    use types::*;
+    use crate::loader::technique::Technique;
 
     #[test]
     fn test_parse_technique() {

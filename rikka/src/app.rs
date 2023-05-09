@@ -242,7 +242,7 @@ impl RikkaApp {
 
                 if let Some(tangent_buffer) = &mesh_draw.tangent_buffer {
                     command_buffer.bind_vertex_buffer(
-                        mesh_draw.tangent_buffer.as_ref().unwrap(),
+                        tangent_buffer,
                         3,
                         mesh_draw.tangent_offset as _,
                     );

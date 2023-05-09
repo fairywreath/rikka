@@ -1,16 +1,17 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Result};
+use parking_lot::Mutex;
 
 use rikka_core::vk;
 use rikka_gpu::{
     buffer::*, command_buffer::*, descriptor_set::*, gpu::Gpu, image::*, pipeline::*, sampler::*,
 };
-
-pub use rikka_gpu::escape::Handle;
 use rikka_graph::graph::Graph;
 
-use crate::technique::parser as technique_parser;
+use crate::loader;
+
+pub use rikka_gpu::escape::Handle;
 
 pub struct RenderTechniqueDesc {
     graphics_pipelines: Vec<GraphicsPipelineDesc>,
@@ -42,13 +43,15 @@ pub struct MaterialDesc {
     // XXX: Currently not used
     render_index: u32,
     render_technique: Arc<RenderTechnique>,
+    name: String,
 }
 
 impl MaterialDesc {
-    pub fn new(render_index: u32, render_technique: Arc<RenderTechnique>) -> Self {
+    pub fn new(render_index: u32, render_technique: Arc<RenderTechnique>, name: String) -> Self {
         MaterialDesc {
             render_index,
             render_technique,
+            name,
         }
     }
 }
@@ -147,7 +150,7 @@ impl Renderer {
         file_name: &str,
         render_graph: &Graph,
     ) -> Result<Arc<RenderTechnique>> {
-        let desc = technique_parser::parse_from_file(file_name, self, render_graph)
+        let desc = loader::technique::parse_from_file(file_name, self, render_graph)
             .context("Failed to parse render technique file")?;
 
         self.create_technique(desc)
@@ -157,21 +160,18 @@ impl Renderer {
         Ok(Arc::new(Material {
             render_index: desc.render_index,
             render_technique: desc.render_technique,
+            name: desc.name,
         }))
     }
 
-    pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Handle<GraphicsPipeline> {
-        material.render_technique.passes[pass_index as usize]
-            .graphics_pipeline
-            .clone()
-    }
+    // pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Handle<GraphicsPipeline> {
+    //     material.render_technique.passes[pass_index as usize]
+    //         .graphics_pipeline
+    //         .clone()
+    // }
 
-    pub fn create_descriptor_set(
-        &self,
-        material: &Material,
-        desc: DescriptorSetDesc,
-    ) -> Result<Arc<DescriptorSet>> {
-        todo!()
+    pub fn create_descriptor_set(&self, desc: DescriptorSetDesc) -> Result<Arc<DescriptorSet>> {
+        Ok(Arc::new(self.gpu.create_descriptor_set(desc)?))
     }
 
     pub fn command_buffer(&mut self, thread_index: u32) -> Result<Arc<CommandBuffer>> {

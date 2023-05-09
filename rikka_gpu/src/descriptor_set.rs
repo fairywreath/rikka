@@ -328,6 +328,23 @@ impl DescriptorSetDesc {
         self
     }
 
+    pub fn add_binding_resource(mut self, binding_resource: DescriptorSetBindingResource) -> Self {
+        self.binding_resources.push(binding_resource);
+        self
+    }
+
+    pub fn add_buffer_resource(mut self, buffer: Handle<Buffer>, binding_index: u32) -> Self {
+        self.binding_resources
+            .push(DescriptorSetBindingResource::buffer(buffer, binding_index));
+        self
+    }
+
+    pub fn add_image_resource(mut self, image: Handle<Image>, binding_index: u32) -> Self {
+        self.binding_resources
+            .push(DescriptorSetBindingResource::image(image, binding_index));
+        self
+    }
+
     pub fn set_pool(mut self, pool: Handle<DescriptorPool>) -> Self {
         self.pool = Some(pool);
         self

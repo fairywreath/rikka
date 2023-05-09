@@ -1471,6 +1471,7 @@ dependencies = [
  "gltf",
  "image",
  "log",
+ "parking_lot",
  "rikka_core",
  "rikka_gpu",
  "rikka_graph",

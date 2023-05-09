@@ -377,7 +377,6 @@ impl Graph {
                 }
             }
 
-            command_buffer.begin()?;
             command_buffer.pipeline_barrier(barriers);
 
             // XXX: set viewport
@@ -388,8 +387,6 @@ impl Graph {
                 render_pass.render(command_buffer)?;
                 command_buffer.end_rendering();
             }
-
-            command_buffer.end()?;
         }
 
         Ok(())
@@ -399,12 +396,8 @@ impl Graph {
         todo!()
     }
 
-    pub fn access_resource(&self, handle: ResourceHandle) -> &Resource {
-        todo!()
-    }
-
-    pub fn access_node(&self, handle: NodeHandle) -> &Node {
-        todo!()
+    pub fn access_resource_by_handle(&self, handle: ResourceHandle) -> Result<&Resource> {
+        self.builder.access_resource_by_handle(&handle)
     }
 
     pub fn access_node_by_name(&self, name: &str) -> Result<&Node> {
