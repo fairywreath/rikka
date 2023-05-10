@@ -2,8 +2,8 @@
     "name": "simpler_pbr",
     "pipelines": [
         {
-            "name": "main_pipeline",
-            "render_pass": "swapchain",
+            "name": "simple_pbr_main",
+            "render_pass": "simple_pbr_pass",
             "shaders": [
                 {
                     "shader_type": "Vertex",

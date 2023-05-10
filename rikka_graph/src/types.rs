@@ -182,9 +182,9 @@ pub struct NodeDesc {
 
 pub trait RenderPass {
     // XXX: These might have to be mut :)
-    fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()>;
+    // fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()>;
     fn render(&self, command_buffer: &CommandBuffer) -> Result<()>;
-    fn resize(&self, width: u32, height: u32) -> Result<()>;
+    // fn resize(&self, width: u32, height: u32) -> Result<()>;
     fn name(&self) -> &str;
 }
 

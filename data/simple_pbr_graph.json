@@ -1,0 +1,35 @@
+{
+    "name": "simple_pbr",
+    "passes": [
+        {
+            "name": "simple_pbr_pass",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "depth",
+                    "resource_type": "Attachment",
+                    "image": {
+                        "format": 126,
+                        "resolution": [
+                            1920,
+                            1200
+                        ],
+                        "load_op": "Clear"
+                    }
+                },
+                {
+                    "name": "final",
+                    "resource_type": "Attachment",
+                    "image": {
+                        "format": 44,
+                        "resolution": [
+                            1920,
+                            1200
+                        ],
+                        "load_op": "Clear"
+                    }
+                }
+            ]
+        }
+    ]
+}

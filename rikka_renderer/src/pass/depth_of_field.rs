@@ -27,15 +27,7 @@ pub struct DepthOfFieldPass {
 }
 
 impl RenderPass for DepthOfFieldPass {
-    fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()> {
-        Ok(())
-    }
-
     fn render(&self, command_buffer: &CommandBuffer) -> Result<()> {
-        Ok(())
-    }
-
-    fn resize(&self, width: u32, height: u32) -> Result<()> {
         Ok(())
     }
 

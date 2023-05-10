@@ -110,7 +110,7 @@ impl TransferManager {
         })
     }
 
-    /// Function to be run periodically to perform asynchronous transfers
+    /// Called periodically to perform asynchronous transfers
     pub fn perform_transfers(&mut self) -> Result<()> {
         // XXX: Technically we can have two in flight transfer_queue submissions running at once
         //      Implement that one day...
@@ -141,7 +141,7 @@ impl TransferManager {
             command_buffer.begin()?;
 
             // XXX: Query proper number of channels from image format.
-            let num_channels = 4;
+            // let num_channels = 4;
             // XXX: Handle proper alignment when number of channels is not guaranteed to be multiple of 4.
             // let image_alignment = 4;
             // let aligned_image_size =

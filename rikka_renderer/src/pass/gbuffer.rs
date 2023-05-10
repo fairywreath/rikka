@@ -20,10 +20,6 @@ impl GBufferPass {
 }
 
 impl RenderPass for GBufferPass {
-    fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()> {
-        todo!()
-    }
-
     fn render(&self, command_buffer: &CommandBuffer) -> Result<()> {
         for mesh_instance in &self.mesh_instances {
             let mesh = &mesh_instance.mesh;
@@ -40,14 +36,10 @@ impl RenderPass for GBufferPass {
                     .graphics_pipeline,
             );
 
-            mesh.draw(command_buffer);
+            // mesh.draw(command_buffer);
         }
 
         Ok(())
-    }
-
-    fn resize(&self, width: u32, height: u32) -> Result<()> {
-        todo!()
     }
 
     fn name(&self) -> &str {

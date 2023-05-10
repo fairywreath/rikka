@@ -7,24 +7,35 @@ layout(location = 3) in vec4 in_Tangent;
 
 layout(location = 0) out vec4 out_FragColor;
 
-layout(std140, binding = 0) uniform UniformData
+layout(std140, binding = 0) uniform SceneUniform
 {
-    mat4 model;
     mat4 view;
     mat4 proj;
 
-    vec4 eye;
-    vec4 light;
+    vec4 eye_position;
+
+    vec4 light_position;
+    float light_range;
+    float light_intensity;
 };
 
-layout(std140, binding = 4) uniform MaterialUniform
+layout(std140, binding = 1) uniform MeshUniform
 {
+    mat4 model;
+    mat4 inverse_model;
+
     vec4 baseColorFactor;
 
     // Indices to the global bindless texture array
     uint diffuseTextureIndex;
-    uint occlusionRoughnessMetalnessTextureIndex;
+    uint metallicRoughnessTextureIndex;
     uint normalTextureIndex;
+    uint occlusionTextureIndex;
+
+    // vec4 metallicRoughnessOcclusionFactor;
+
+    // float alpha_cutoff;
+    // uint flags;
 };
 
 #extension GL_EXT_nonuniform_qualifier : enable
@@ -81,7 +92,8 @@ float heaviside(float v)
 void main()
 {
     vec4 diffuseTexture = texture(globalTextures[diffuseTextureIndex], in_TexCoord0);
-    vec4 omr = texture(globalTextures[occlusionRoughnessMetalnessTextureIndex], in_TexCoord0);
+    // vec4 diffuseTexture = texture(globalTextures[3], in_TexCoord0);
+    vec4 omr = texture(globalTextures[metallicRoughnessTextureIndex], in_TexCoord0);
     vec4 normalTexture = texture(globalTextures[normalTextureIndex], in_TexCoord0);
 
     vec3 tangent = normalize(in_Tangent.xyz);
@@ -92,8 +104,8 @@ void main()
 
     mat3 TBN = transpose(mat3(tangent, bitangent, normalize(in_Normal)));
 
-    vec3 V = normalize(TBN * (eye.xyz - in_Position.xyz));
-    vec3 L = normalize(TBN * (light.xyz - in_Position.xyz));
+    vec3 V = normalize(TBN * (eye_position.xyz - in_Position.xyz));
+    vec3 L = normalize(TBN * (light_position.xyz - in_Position.xyz));
     vec3 N = bump_normal;
     vec3 H = normalize(L + V);
 
@@ -136,5 +148,10 @@ void main()
     vec3 material_color = mix(fresnel_mix, conductor_fresnel, metalness);
     material_color.rgb = encode_srgb(material_color.rgb);
     out_FragColor = vec4(material_color, base_color.a);
-    // out_FragColor = base_color;
+
+    // out_FragColor = diffuseTexture;
+
+    // out_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    // out_FragColor = vec4(0.0, diffuseTextureIndex, 0.0, 1.0);
+    // out_FragColor = vec4(0.0, diffuseTextureIndex / 70, 0.0, 1.0);
 }

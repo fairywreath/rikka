@@ -6,7 +6,7 @@ use rikka_core::{
 };
 use rikka_gpu::{
     buffer::Buffer, command_buffer::CommandBuffer, constants::INVALID_BINDLESS_TEXTURE_INDEX,
-    descriptor_set::DescriptorSet, image::Image,
+    descriptor_set::DescriptorSet, image::Image, pipeline::GraphicsPipeline,
 };
 
 use crate::{renderer::*, scene};
@@ -118,22 +118,27 @@ impl Mesh {
         GPUMeshData {
             global_model: Matrix4::identity(),
             global_inverse_model: Matrix4::identity(),
+            base_color_factor: self.pbr_material.base_color_factor,
             diffuse_texture_index: Self::get_texture_index(&self.pbr_material.diffuse_image),
             metallic_roughness_texture_index: Self::get_texture_index(
                 &self.pbr_material.metallic_roughness_image,
             ),
             normal_texture_index: Self::get_texture_index(&self.pbr_material.normal_image),
             occlusion_texture_index: Self::get_texture_index(&self.pbr_material.occlusion_image),
-            base_color_factor: self.pbr_material.base_color_factor,
-            metallic_roughness_occlusion_factor: self
-                .pbr_material
-                .metallic_roughness_occlusion_factor,
-            alpha_cutoff: self.pbr_material.alpha_cutoff,
-            flags: self.pbr_material.draw_flags.bits(),
+            // metallic_roughness_occlusion_factor: self
+            //     .pbr_material
+            //     .metallic_roughness_occlusion_factor,
+            // alpha_cutoff: self.pbr_material.alpha_cutoff,
+            // flags: self.pbr_material.draw_flags.bits(),
         }
     }
 
-    pub fn draw(&self, command_buffer: &CommandBuffer) {
+    pub fn draw(
+        &self,
+        command_buffer: &CommandBuffer,
+        graphics_pipeline: &GraphicsPipeline,
+        zero_buffer: &Buffer,
+    ) {
         command_buffer.bind_vertex_buffer(
             self.position_buffer.as_ref().unwrap(),
             0,
@@ -151,21 +156,21 @@ impl Mesh {
         );
 
         // XXX: From where should we access the zero buffer?
-        // if let Some(tangent_buffer) = &self.tangent_buffer {
-        //     command_buffer.bind_vertex_buffer(tangent_buffer, 3, self.tangent_offset as _);
-        // } else {
-        //     command_buffer.bind_vertex_buffer(&self.zero_buffer, 3, 0);
-        // }
+        if let Some(tangent_buffer) = &self.tangent_buffer {
+            command_buffer.bind_vertex_buffer(tangent_buffer, 3, self.tangent_offset as _);
+        } else {
+            command_buffer.bind_vertex_buffer(&zero_buffer, 3, 0);
+        }
 
         command_buffer
             .bind_index_buffer(self.index_buffer.as_ref().unwrap(), self.index_offset as _);
 
         // XXX: From where should we access the graphics pipeline layout?
-        // command_buffer.bind_descriptor_set(
-        //     self.descriptor_set.as_ref().unwrap(),
-        //     graphics_pipeline.raw_layout(),
-        //     0,
-        // );
+        command_buffer.bind_descriptor_set(
+            &self.pbr_material.descriptor_set,
+            graphics_pipeline.raw_layout(),
+            0,
+        );
 
         command_buffer.draw_indexed(self.primitive_count, 1, 0, 0, 0);
     }
@@ -175,6 +180,7 @@ impl Mesh {
     }
 }
 
+#[derive(Clone)]
 pub struct MeshInstance {
     pub mesh: Arc<Mesh>,
     pub material_pass_index: usize,
@@ -189,25 +195,50 @@ impl MeshInstance {
     }
 }
 
+/// Mesh material data
 #[derive(Clone, Copy)]
 pub struct GPUMeshData {
     pub global_model: Matrix4<f32>,
     pub global_inverse_model: Matrix4<f32>,
 
+    pub base_color_factor: Vector4<f32>,
+
     pub diffuse_texture_index: u32,
     pub metallic_roughness_texture_index: u32,
     pub normal_texture_index: u32,
     pub occlusion_texture_index: u32,
-
-    pub base_color_factor: Vector4<f32>,
-    pub metallic_roughness_occlusion_factor: Vector4<f32>,
-    pub alpha_cutoff: f32,
-    pub flags: u32,
+    // pub metallic_roughness_occlusion_factor: Vector4<f32>,
+    // pub alpha_cutoff: f32,
+    // pub flags: u32,
 }
 
 impl GPUMeshData {
     pub fn set_matrices_from_scene_graph(&mut self, mesh: &Mesh, scene_graph: &scene::Graph) {
         self.global_model = scene_graph.global_matrices[mesh.scene_graph_node_index];
         self.global_inverse_model = self.global_model.try_inverse().unwrap();
+    }
+}
+
+/// Per frame uniform data
+#[derive(Clone, Copy)]
+pub struct GPUSceneUniformData {
+    pub view: Matrix4<f32>,
+    pub projection: Matrix4<f32>,
+    pub eye_position: Vector4<f32>,
+    pub light_position: Vector4<f32>,
+    pub light_range: f32,
+    pub light_intensity: f32,
+}
+
+impl GPUSceneUniformData {
+    pub fn new() -> Self {
+        Self {
+            view: Matrix4::identity(),
+            projection: Matrix4::identity(),
+            eye_position: Vector4::identity(),
+            light_position: Vector4::new(-1.5, 2.5, -0.5, 1.0),
+            light_range: 0.0,
+            light_intensity: 0.0,
+        }
     }
 }

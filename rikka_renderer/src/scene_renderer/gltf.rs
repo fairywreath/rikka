@@ -87,7 +87,7 @@ impl GltfScene {
         let image = renderer.create_image(image_desc)?;
         // XXX: Do this internally in the GPU
         renderer
-            .gpu()
+            .gpu_mut()
             .add_bindless_image_update(rikka_gpu::types::ImageResourceUpdate {
                 frame: 0,
                 image: Some(image.clone()),
@@ -223,7 +223,9 @@ impl GltfScene {
                     )
                     .set_device_only(true),
             )?;
-            renderer.gpu().copy_buffer(&staging_buffer, &gpu_buffer)?;
+            renderer
+                .gpu_mut()
+                .copy_buffer(&staging_buffer, &gpu_buffer)?;
 
             gpu_buffers.push(Handle::from(gpu_buffer));
         }
@@ -242,10 +244,19 @@ impl GltfScene {
 
         // XXX: Use dynamic uniform buffer?
         let material_buffer_desc = BufferDesc::new()
-            .set_usage_flags(vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER)
-            .set_size(size_of::<GPUMeshData> as u32)
+            .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .set_size(size_of::<GPUMeshData>() as _)
             .set_device_only(false);
+        // log::info!("Material buffer size: {}", material_buffer_desc.size);
         let material_buffer = renderer.create_buffer(material_buffer_desc)?;
+
+        // let mesh_data = GPUMeshData {
+        //     diffuse_texture_index: 3,
+        //     metallic_roughness_texture_index: 3,
+        //     normal_texture_index: 3,
+        //     base_color_factor: Vector4::new(0.67, 0.67, 0.67, 1.0),
+        // };
+        // material_buffer.copy_data_to_buffer(&[mesh_data])?;
 
         // XXX: Use accessprs fpr a lot of the structs instead of public mbembers
         let descriptor_set_layout = render_technique.passes[0]
@@ -253,8 +264,8 @@ impl GltfScene {
             .descriptor_set_layouts()[0]
             .clone();
         let descriptor_set_desc = DescriptorSetDesc::new(descriptor_set_layout)
-            .add_buffer_resource(material_buffer.clone(), 1)
-            .add_buffer_resource(uniform_buffer, 0);
+            .add_buffer_resource(uniform_buffer, 0)
+            .add_buffer_resource(material_buffer.clone(), 1);
         let descriptor_set = renderer.create_descriptor_set(descriptor_set_desc)?;
 
         Ok(PBRMaterial::new(material, material_buffer, descriptor_set))
@@ -329,10 +340,10 @@ impl GltfScene {
 
             pbr_material.metallic_roughness_occlusion_factor.z = occlusion_info.strength();
         } else {
-            log::warn!(
-                "Material {} has no occlusion texture",
-                gltf_material.name().unwrap()
-            );
+            // log::warn!(
+            //     "Material {} has no occlusion texture",
+            //     gltf_material.name().unwrap()
+            // );
             pbr_material.metallic_roughness_occlusion_factor.z = INVALID_FLOAT_VALUE;
         }
 
@@ -357,10 +368,10 @@ impl GltfScene {
             );
             pbr_material.metallic_roughness_image = Some(image);
         } else {
-            log::warn!(
-                "Material {} has no metallic roughness texture",
-                gltf_material.name().unwrap()
-            );
+            // log::warn!(
+            //     "Material {} has no metallic roughness texture",
+            //     gltf_material.name().unwrap()
+            // );
         }
 
         // Normal texture
@@ -369,10 +380,10 @@ impl GltfScene {
                 Self::get_material_texture_image(normal_info.texture(), gpu_images, gpu_samplers);
             pbr_material.normal_image = Some(image);
         } else {
-            log::warn!(
-                "Material {} has no normal texture",
-                gltf_material.name().unwrap()
-            );
+            // log::warn!(
+            //     "Material {} has no normal texture",
+            //     gltf_material.name().unwrap()
+            // );
         }
 
         Ok(pbr_material)
@@ -382,7 +393,6 @@ impl GltfScene {
         renderer: &mut Renderer,
         file_name: &str,
         uniform_buffer: &Handle<Buffer>,
-        descriptor_set_layout: &Handle<DescriptorSetLayout>,
         render_technique: &Arc<RenderTechnique>,
         // XXX: Use a channel for this
         async_loader: &mut AsynchronousLoader,
@@ -435,8 +445,9 @@ impl GltfScene {
         while !nodes_to_visit.is_empty() {
             let node = nodes_to_visit.pop_front().unwrap();
 
-            // Find to set this now as we will be traversing all of the nodes
-            scene_graph.set_local_matrix(node.index(), Matrix4::from(node.transform().matrix()));
+            // Find to set this now as all nodes are traversed in a BFS manner
+            let transform_matrix = Matrix4::from(node.transform().matrix());
+            scene_graph.set_local_matrix(node.index(), transform_matrix);
 
             for child in node.children() {
                 scene_graph.set_hierarchy(

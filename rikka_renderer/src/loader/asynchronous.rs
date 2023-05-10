@@ -59,6 +59,11 @@ impl AsynchronousLoader {
                     image: image_request.image,
                     data: image_data,
                 })?;
+
+            // log::info!(
+            //     "Successfully loaded image {}",
+            //     image_request.file_name.as_str()
+            // );
         }
 
         Ok(())

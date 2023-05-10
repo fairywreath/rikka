@@ -1,0 +1,20 @@
+{
+    "name": "fullscreen",
+    "pipelines": [
+        {
+            "name": "fullscreen_main",
+            "render_pass": "swapchain",
+            "shaders": [
+                {
+                    "shader_type": "Vertex",
+                    "file_name": "shaders/fullscreen/fullscreen.vert"
+                },
+                {
+                    "shader_type": "Fragment",
+                    "file_name": "shaders/fullscreen/fullscreen.frag"
+                }
+            ],
+            "vertex_inputs": []
+        }
+    ]
+}

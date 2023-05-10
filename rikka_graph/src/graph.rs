@@ -183,7 +183,7 @@ impl Graph {
                             // XXX: Reuse free images
                             todo!()
                         } else {
-                            let image_desc = ImageDesc::new(
+                            let mut image_desc = ImageDesc::new(
                                 image_info.width,
                                 image_info.height,
                                 image_info.depth,
@@ -192,8 +192,16 @@ impl Graph {
                             .set_image_type(vk::ImageType::TYPE_2D)
                             .set_usage_flags(image_info.usage_flags);
 
-                            log::trace!("Creating GPU image for node output {}", resource_name);
+                            if !format_has_depth(image_info.format) {
+                                image_desc.usage_flags |= vk::ImageUsageFlags::SAMPLED;
+                            }
+
                             let image = gpu.create_image(image_desc)?;
+                            log::trace!(
+                                "Created GPU image for node output {} with bindless index {}",
+                                resource_name,
+                                image.bindless_index()
+                            );
 
                             self.builder
                                 .access_resource_mut_by_handle(&output_handle)?
@@ -382,13 +390,23 @@ impl Graph {
             // XXX: set viewport
 
             if let Some(render_pass) = &node.render_pass {
-                render_pass.pre_render(command_buffer)?;
+                // render_pass.pre_render(command_buffer)?;
                 command_buffer.begin_rendering(node.rendering_state.as_ref().unwrap().clone());
                 render_pass.render(command_buffer)?;
                 command_buffer.end_rendering();
             }
         }
 
+        Ok(())
+    }
+
+    pub fn register_render_pass(
+        &mut self,
+        name: &str,
+        render_pass: Box<dyn RenderPass>,
+    ) -> Result<()> {
+        let node = self.builder.access_node_mut_by_name(name)?;
+        node.render_pass = Some(render_pass);
         Ok(())
     }
 

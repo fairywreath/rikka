@@ -6,7 +6,7 @@ use rikka_core::vk;
 use rikka_gpu::{buffer::*, command_buffer::CommandBuffer, descriptor_set::*};
 use rikka_graph::{graph::Graph, types::*};
 
-use crate::{renderer::*, scene_renderer::types::*, types::*};
+use crate::{renderer::*, scene_renderer::types::*};
 
 pub struct PBRLightingPass {
     /// Fullscreen mesh
@@ -57,14 +57,11 @@ impl PBRLightingPass {
         let roughness_texture_resource = render_graph.access_resource_by_handle(node.inputs[2])?;
         let position_texture_resource = render_graph.access_resource_by_handle(node.inputs[3])?;
 
-        mesh.pbr_material.diffuse_texture_index =
-            diffuse_texture_resource.gpu_image_bindless_index()?;
-        mesh.pbr_material.normal_texture_index =
-            normal_texture_resource.gpu_image_bindless_index()?;
-        mesh.pbr_material.roughness_texture_index =
-            roughness_texture_resource.gpu_image_bindless_index()?;
-        mesh.pbr_material.position_texture_index =
-            position_texture_resource.gpu_image_bindless_index()?;
+        mesh.pbr_material.diffuse_image = Some(diffuse_texture_resource.gpu_image()?.clone());
+        mesh.pbr_material.normal_image = Some(normal_texture_resource.gpu_image()?);
+        mesh.pbr_material.metallic_roughness_image = Some(roughness_texture_resource.gpu_image()?);
+        // Store position texture on occlusion image
+        mesh.pbr_material.occlusion_image = Some(position_texture_resource.gpu_image()?);
 
         Ok(Self { mesh })
     }
@@ -79,10 +76,6 @@ impl PBRLightingPass {
 }
 
 impl RenderPass for PBRLightingPass {
-    fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()> {
-        todo!()
-    }
-
     fn render(&self, command_buffer: &CommandBuffer) -> Result<()> {
         let material_pass_index = 0;
         let graphics_pipeline = &self.mesh.pbr_material.material.render_technique.passes
@@ -99,10 +92,6 @@ impl RenderPass for PBRLightingPass {
         command_buffer.draw(3, 1, 0, 0);
 
         Ok(())
-    }
-
-    fn resize(&self, width: u32, height: u32) -> Result<()> {
-        todo!()
     }
 
     fn name(&self) -> &str {

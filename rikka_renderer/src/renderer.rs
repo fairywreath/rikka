@@ -164,12 +164,6 @@ impl Renderer {
         }))
     }
 
-    // pub fn get_material_pipeline(material: &Material, pass_index: u32) -> Handle<GraphicsPipeline> {
-    //     material.render_technique.passes[pass_index as usize]
-    //         .graphics_pipeline
-    //         .clone()
-    // }
-
     pub fn create_descriptor_set(&self, desc: DescriptorSetDesc) -> Result<Arc<DescriptorSet>> {
         Ok(Arc::new(self.gpu.create_descriptor_set(desc)?))
     }

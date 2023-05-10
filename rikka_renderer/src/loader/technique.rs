@@ -204,10 +204,6 @@ impl Pipeline {
         desc = desc.set_vertex_input_state(vertex_input_state);
 
         if self.render_pass == "swapchain" {
-            log::debug!(
-                "Set up swapchain rendering state for pipeline {}",
-                self.name.as_str()
-            );
             desc = desc.set_rendering_state(
                 gpu_types::RenderingState::new_dimensionless()
                     .add_color_attachment(

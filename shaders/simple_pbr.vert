@@ -10,14 +10,35 @@ layout(location = 1) out vec2 out_TexCoord0;
 layout(location = 2) out vec3 out_Normal;
 layout(location = 3) out vec4 out_Tangent;
 
-layout(std140, binding = 0) uniform UniformData
+layout(std140, binding = 0) uniform SceneUniform
 {
-    mat4 model;
     mat4 view;
     mat4 proj;
 
-    vec4 eye;
-    vec4 light;
+    vec4 eye_position;
+
+    vec4 light_position;
+    float light_range;
+    float light_intensity;
+};
+
+layout(std140, binding = 1) uniform MeshUniform
+{
+    mat4 model;
+    mat4 inverse_model;
+
+    vec4 baseColorFactor;
+
+    // Indices to the global bindless texture array
+    uint diffuseTextureIndex;
+    uint metallicRoughnessTextureIndex;
+    uint normalTextureIndex;
+    uint occlusionTextureIndex;
+
+    // vec4 metallicRoughnessOcclusionFactor;
+
+    // float alpha_cutoff;
+    // uint flags;
 };
 
 void main()

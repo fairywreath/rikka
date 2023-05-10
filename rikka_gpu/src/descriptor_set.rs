@@ -316,7 +316,7 @@ impl DescriptorSetDesc {
         Self {
             layout,
             pool: None,
-            binding_resources: vec![],
+            binding_resources: Vec::new(),
         }
     }
 

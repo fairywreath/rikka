@@ -3,3 +3,4 @@ pub mod depth_pre;
 pub mod gbuffer;
 pub mod pbr_lighting;
 pub mod simple_pbr;
+pub mod transparent;
