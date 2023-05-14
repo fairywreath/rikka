@@ -133,7 +133,7 @@ impl GraphicsPipeline {
         let mut layout_descs = Vec::with_capacity(descriptor_sets.len());
         for set in descriptor_sets {
             // XXX: Make this bindless texture array check nicer
-            //      Need GPU class for this to work... use shared bindless texture layout for all pipelines
+            //      Need Gpu class for this to work... use shared bindless texture layout for all pipelines
             if set.bindings[0].index == constants::BINDLESS_SET_SAMPLED_IMAGE_INDEX {
                 let bindless_descriptor_set_layout_desc = DescriptorSetLayoutDesc::new()
                     .set_flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)

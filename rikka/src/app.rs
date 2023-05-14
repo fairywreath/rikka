@@ -32,7 +32,7 @@ impl RikkaApp {
 
         let scene_renderer_config = Config {
             file_paths_config: FilePathsConfig {
-                render_graph_file_path: String::from("data/simple_pbr_graph.json"),
+                render_graph_file_path: String::from("data/graphs/simple_pbr_graph.json"),
                 render_techniques_file_paths: Vec::new(),
                 gtlf_model_file_path: String::from(gltf_file_name),
             },
@@ -58,7 +58,7 @@ impl RikkaApp {
             while run_transfers.load(Ordering::Relaxed) {
                 transfer_manager
                     .perform_transfers()
-                    .expect("GPU transfer manager failed to update!");
+                    .expect("Gpu transfer manager failed to update!");
             }
 
             log::info!("Transfer manager exeuction stopped");

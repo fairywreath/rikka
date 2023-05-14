@@ -204,7 +204,7 @@ impl TransferManager {
     }
 
     pub fn destroy(self) {
-        log::info!("Destroyed GPU transfer manager");
+        log::info!("Destroyed Gpu transfer manager");
     }
 
     /// Receives image upload requests from the channel

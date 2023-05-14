@@ -3,7 +3,7 @@ use anyhow::Result;
 use rikka_core::nalgebra::Matrix4;
 
 pub const INVALID_INDEX: usize = usize::MAX;
-const MAX_SCENE_LEVEL: usize = 16;
+const MAX_SCENE_LEVEL: usize = 32;
 
 #[derive(Clone, Copy)]
 pub struct Hierarchy {
@@ -66,23 +66,29 @@ impl Graph {
     }
 
     pub fn calculate_transforms(&mut self) -> Result<()> {
+        let mut num_changed_nodes = 0;
         for level in 0..MAX_SCENE_LEVEL {
-            if !self.changed_nodes[level].is_empty() {
-                for changed_node in self.changed_nodes[level].drain(..) {
-                    let changed_node = changed_node;
-                    let parent_node = self.nodes_hierarchy[changed_node].parent;
+            num_changed_nodes += self.changed_nodes[level].len();
+        }
+        log::info!("Scene graph number of changed nodes: {}", num_changed_nodes);
 
-                    if parent_node != INVALID_INDEX {
-                        self.global_matrices[changed_node] =
-                            self.global_matrices[parent_node] * self.local_matrices[changed_node];
-                    } else {
-                        // Root node case
-                        self.global_matrices[changed_node] = self.local_matrices[changed_node];
-                    }
+        for level in 0..MAX_SCENE_LEVEL {
+            // if !self.changed_nodes[level].is_empty() {
+            for changed_node in self.changed_nodes[level].drain(..) {
+                let changed_node = changed_node;
+                let parent_node = self.nodes_hierarchy[changed_node].parent;
+
+                if parent_node != INVALID_INDEX {
+                    self.global_matrices[changed_node] =
+                        self.global_matrices[parent_node] * self.local_matrices[changed_node];
+                } else {
+                    // Root node case
+                    self.global_matrices[changed_node] = self.local_matrices[changed_node];
                 }
-            } else {
-                break;
             }
+            // } else {
+            // break;
+            // }
         }
 
         Ok(())

@@ -1,5 +1,5 @@
 {
-    "name": "simpler_pbr",
+    "name": "simple_pbr",
     "pipelines": [
         {
             "name": "simple_pbr_main",
@@ -7,11 +7,11 @@
             "shaders": [
                 {
                     "shader_type": "Vertex",
-                    "file_name": "shaders/simple_pbr.vert"
+                    "file_name": "shaders/simple_pbr.vert.glsl"
                 },
                 {
                     "shader_type": "Fragment",
-                    "file_name": "shaders/simple_pbr.frag"
+                    "file_name": "shaders/simple_pbr.frag.glsl"
                 }
             ],
             "vertex_inputs": [
@@ -58,7 +58,7 @@
                 "compare_op": "LessOrEqual"
             },
             "rasterization_state": {
-                "cull_mode": "Back",
+                "cull_mode": "None",
                 "front_face": "CounterClockwise",
                 "polygon_mode": "Fill"
             }

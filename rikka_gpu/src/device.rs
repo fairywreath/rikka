@@ -11,7 +11,7 @@ use rikka_core::{ash, vk};
 
 use crate::{instance::Instance, physical_device::PhysicalDevice, queue::*, surface::Surface};
 
-/// Device wrapper that acts as a lifeguard for the GPU resources and the Vulkan instance.
+/// Device wrapper that acts as a lifeguard for the Gpu resources and the Vulkan instance.
 pub struct Device {
     // XXX: Remove Arc<>
     allocator: ManuallyDrop<Arc<Mutex<Allocator>>>,
@@ -28,7 +28,7 @@ impl Device {
         let physical_device = select_suitable_physical_device(&physical_devices)?;
         let queue_family_indices = select_queue_family_indices(&physical_device);
 
-        log::info!("GPU name: {}", physical_device.name);
+        log::info!("Gpu name: {}", physical_device.name);
         log::info!("Graphics family: {}", queue_family_indices.graphics.index());
         log::info!("Present family: {}", queue_family_indices.present.index());
         log::info!("Compute family: {}", queue_family_indices.compute.index());
@@ -105,7 +105,7 @@ impl Device {
             .map(|ext| ext.as_ptr())
             .collect::<Vec<_>>();
 
-        // XXX: Properly check that these features are supported by the GPU(done in physical device creation)
+        // XXX: Properly check that these features are supported by the Gpu(done in physical device creation)
 
         let mut vulkan11_features =
             vk::PhysicalDeviceVulkan11Features::builder().shader_draw_parameters(true);
@@ -127,7 +127,7 @@ impl Device {
             .mesh_shader(true)
             .task_shader(true);
 
-        // PhysicalDeviceFeatures 2 reports ALL of GPU's device features capabilies. Pass this along pNext chain to enable all.
+        // PhysicalDeviceFeatures 2 reports ALL of Gpu's device features capabilies. Pass this along pNext chain to enable all.
         let mut device_features2 = vk::PhysicalDeviceFeatures2::builder();
         unsafe {
             instance
@@ -208,7 +208,7 @@ fn select_suitable_physical_device(devices: &[PhysicalDevice]) -> Result<Physica
     let device = devices
         .iter()
         .find(|device| device.device_type == vk::PhysicalDeviceType::DISCRETE_GPU)
-        .ok_or_else(|| anyhow::anyhow!("Could not find suitable GPU!"))?;
+        .ok_or_else(|| anyhow::anyhow!("Could not find suitable Gpu!"))?;
 
     Ok(device.clone())
 }

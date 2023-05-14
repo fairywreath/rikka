@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Result};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use rikka_core::vk;
 use rikka_gpu::{
@@ -15,12 +15,14 @@ pub use rikka_gpu::escape::Handle;
 
 pub struct RenderTechniqueDesc {
     graphics_pipelines: Vec<GraphicsPipelineDesc>,
+    name: String,
 }
 
 impl RenderTechniqueDesc {
-    pub fn new() -> Self {
+    pub fn new(name: String) -> Self {
         RenderTechniqueDesc {
             graphics_pipelines: Vec::new(),
+            name,
         }
     }
 
@@ -57,6 +59,7 @@ impl MaterialDesc {
 }
 
 pub struct Material {
+    // XXX: This is not needed?
     render_index: u32,
     // XXX: Make nice APi and remove `pub` here
     pub render_technique: Arc<RenderTechnique>,
@@ -65,11 +68,15 @@ pub struct Material {
 
 pub struct Renderer {
     gpu: Gpu,
+    render_techniques: RwLock<HashMap<String, Arc<RenderTechnique>>>,
 }
 
 impl Renderer {
     pub fn new(gpu: Gpu) -> Self {
-        Renderer { gpu }
+        Renderer {
+            gpu,
+            render_techniques: RwLock::new(HashMap::new()),
+        }
     }
 
     // XXX: Remove these eventually
@@ -130,11 +137,7 @@ impl Renderer {
         let graphics_pipelines = desc
             .graphics_pipelines
             .into_iter()
-            .map(|graphics_pipeline_desc| {
-                Ok(Handle::from(
-                    self.gpu.create_graphics_pipeline(graphics_pipeline_desc)?,
-                ))
-            })
+            .map(|graphics_pipeline_desc| self.gpu.create_graphics_pipeline(graphics_pipeline_desc))
             .collect::<Result<Vec<_>>>()?;
 
         let passes = graphics_pipelines
@@ -142,7 +145,13 @@ impl Renderer {
             .map(|graphics_pipeline| RenderTechniquePass { graphics_pipeline })
             .collect::<Vec<_>>();
 
-        Ok(Arc::new(RenderTechnique { passes }))
+        let technique = Arc::new(RenderTechnique { passes });
+
+        self.render_techniques
+            .write()
+            .insert(desc.name, technique.clone());
+
+        Ok(technique)
     }
 
     pub fn create_technique_from_file(
@@ -154,6 +163,15 @@ impl Renderer {
             .context("Failed to parse render technique file")?;
 
         self.create_technique(desc)
+    }
+
+    pub fn get_render_technique(&self, name: &str) -> Result<Arc<RenderTechnique>> {
+        Ok(self
+            .render_techniques
+            .read()
+            .get(name)
+            .context("Render technique not found")?
+            .clone())
     }
 
     pub fn create_material(&self, desc: MaterialDesc) -> Result<Arc<Material>> {
@@ -177,7 +195,7 @@ impl Renderer {
     }
 
     /// XXX: Resource OBRM/RAII is not completely "safe" as they can be destroyed when used.
-    ///      Need a resource system tracker in the GPU for this, or at least have a simple sender/receiver to delay
+    ///      Need a resource system tracker in the Gpu for this, or at least have a simple sender/receiver to delay
     ///      object destruction until the end of the current frame
     ///      Currently we just wait idle before dropping any resources but this needs to be removed
     pub fn wait_idle(&self) {

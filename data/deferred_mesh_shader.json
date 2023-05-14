@@ -1,0 +1,34 @@
+{
+    "name": "deferred_mesh_shader",
+    "pipelines": [
+        {
+            "name": "mesh_shader_gbuffer_pipeline",
+            "render_pass": "gbuffer_pass",
+            "shaders": [
+                {
+                    "shader_type": "Task",
+                    "file_name": "shaders/gbuffer.task.glsl"
+                },
+                {
+                    "shader_type": "Mesh",
+                    "file_name": "shaders/gbuffer.mesh.glsl"
+                },
+                {
+                    "shader_type": "Fragment",
+                    "file_name": "shaders/gbuffer.frag.glsl"
+                }
+            ],
+            "depth_state": {
+                "write_enable": true,
+                "test_enable": true,
+                "compare_op": "LessOrEqual"
+            },
+            "rasterization_state": {
+                "cull_mode": "None",
+                "front_face": "CounterClockwise",
+                "polygon_mode": "Fill"
+            },
+            "vertex_inputs": []
+        }
+    ]
+}

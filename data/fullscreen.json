@@ -7,11 +7,11 @@
             "shaders": [
                 {
                     "shader_type": "Vertex",
-                    "file_name": "shaders/fullscreen/fullscreen.vert"
+                    "file_name": "shaders/fullscreen.vert.glsl"
                 },
                 {
                     "shader_type": "Fragment",
-                    "file_name": "shaders/fullscreen/fullscreen.frag"
+                    "file_name": "shaders/fullscreen.frag.glsl"
                 }
             ],
             "vertex_inputs": []

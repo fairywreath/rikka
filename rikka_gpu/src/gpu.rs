@@ -39,6 +39,11 @@ pub struct Gpu {
     // XXX: Remove this once a frame graph is implemented
     shader_read_image_sender: Sender<Handle<Image>>,
     shader_read_image_receiver: Receiver<Handle<Image>>,
+    // XXX: Images should only be cleared when the command buffer transition has completed
+    // Clear every 2 frames, but we may need more than 2 frames. Ideally we should clear every N frame
+    // where N = max frames.
+    cached_images_to_transition_0: Vec<Handle<Image>>,
+    cached_images_to_transition_1: Vec<Handle<Image>>,
 
     // XXX: Have an asynchronous transfer handler
     transfer_command_pool: CommandPool,
@@ -285,7 +290,9 @@ impl Gpu {
 
             shader_read_image_sender,
             shader_read_image_receiver,
-            // transfer_manager,
+
+            cached_images_to_transition_0: Vec::new(),
+            cached_images_to_transition_1: Vec::new(),
         })
     }
 
@@ -440,6 +447,7 @@ impl Gpu {
         self.update_bindless_images();
 
         // XXX: Technically it MAY not be safe to destroy resource here. Need a proper resource tracker management system(don't wanna write GL though ugh!);
+        //      A very common example is that images used on the transfer queue may be destroyed already
         self.factory.cleanup_resources();
 
         Ok(present_result)
@@ -658,8 +666,11 @@ impl Gpu {
     }
 
     pub fn update_image_transitions(&mut self, thread_index: u32) -> Result<()> {
+        self.cached_images_to_transition_1 = self.cached_images_to_transition_0.clone();
+
         let mut images_to_transition = Vec::new();
-        if !self.shader_read_image_receiver.is_empty() {
+
+        while !self.shader_read_image_receiver.is_empty() {
             images_to_transition.push(self.shader_read_image_receiver.recv()?);
         }
 
@@ -683,7 +694,7 @@ impl Gpu {
             self.queue_graphics_command_buffer(command_buffer);
         }
 
-        images_to_transition.clear();
+        self.cached_images_to_transition_0 = images_to_transition;
 
         Ok(())
     }
@@ -719,17 +730,6 @@ impl Drop for Gpu {
 
         self.force_cleanup();
 
-        unsafe {
-            // self.bindless_descriptor_pool.destroy();
-            // self.global_descriptor_pool.destroy();
-            // self.device.guard
-            // Arc::decrement_strong_count(&mut self.device.guard);
-            // Arc::decrement_strong_count(&mut self.device.guard);
-            // Arc::decrement_strong_count(&mut self.device.guard);
-        }
-
-        // log::info!("Device guard final strong count:")
-
-        log::info!("GPU dropped");
+        log::info!("Gpu dropped");
     }
 }

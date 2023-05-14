@@ -6,60 +6,10 @@ use rikka_core::{
 };
 use rikka_gpu::{
     buffer::Buffer, command_buffer::CommandBuffer, constants::INVALID_BINDLESS_TEXTURE_INDEX,
-    descriptor_set::DescriptorSet, image::Image, pipeline::GraphicsPipeline,
+    image::Image, pipeline::GraphicsPipeline,
 };
 
-use crate::{renderer::*, scene};
-
-pub const INVALID_FLOAT_VALUE: f32 = f32::MAX;
-
-bitflags::bitflags! {
-    pub struct DrawFlags : u32 {
-        const NONE = 0x1;
-        const ALPHA_MASK = 0x1;
-        const DOUBLE_SIDED = 0x2;
-        const TRANSPARENT = 0x3;
-    }
-}
-
-pub struct PBRMaterial {
-    pub material: Arc<Material>,
-    /// Also used to store Mesh data
-    pub material_buffer: Handle<Buffer>,
-    pub descriptor_set: Arc<DescriptorSet>,
-
-    pub diffuse_image: Option<Handle<Image>>,
-    pub metallic_roughness_image: Option<Handle<Image>>,
-    pub normal_image: Option<Handle<Image>>,
-    pub occlusion_image: Option<Handle<Image>>,
-
-    pub base_color_factor: Vector4<f32>,
-    pub metallic_roughness_occlusion_factor: Vector4<f32>,
-    pub alpha_cutoff: f32,
-    pub draw_flags: DrawFlags,
-}
-
-impl PBRMaterial {
-    pub fn new(
-        material: Arc<Material>,
-        material_buffer: Handle<Buffer>,
-        descriptor_set: Arc<DescriptorSet>,
-    ) -> Self {
-        Self {
-            material,
-            material_buffer,
-            descriptor_set,
-            diffuse_image: None,
-            metallic_roughness_image: None,
-            normal_image: None,
-            occlusion_image: None,
-            base_color_factor: Vector4::new(0.0, 0.0, 0.0, 0.0),
-            metallic_roughness_occlusion_factor: Vector4::new(0.0, 0.0, 0.0, 0.0),
-            alpha_cutoff: INVALID_FLOAT_VALUE,
-            draw_flags: DrawFlags::NONE,
-        }
-    }
-}
+use crate::{renderer::*, scene, scene_renderer::material::*};
 
 pub struct Mesh {
     pub pbr_material: PBRMaterial,
@@ -80,7 +30,9 @@ pub struct Mesh {
     pub index_offset: u32,
     pub index_type: vk::IndexType,
 
-    pub transparent: bool,
+    pub meshlet_offset: u32,
+    pub meshlet_count: u32,
+    pub gpu_mesh_index: u32,
 
     pub scene_graph_node_index: usize,
 }
@@ -101,7 +53,9 @@ impl Mesh {
             tangent_offset: 0,
             index_offset: 0,
             index_type: vk::IndexType::UINT16,
-            transparent: false,
+            meshlet_offset: u32::MAX,
+            meshlet_count: u32::MAX,
+            gpu_mesh_index: u32::MAX,
             scene_graph_node_index: scene::INVALID_INDEX,
         }
     }
@@ -114,8 +68,8 @@ impl Mesh {
         }
     }
 
-    pub fn create_gpu_data(&self) -> GPUMeshData {
-        GPUMeshData {
+    pub fn create_gpu_data(&self) -> GpuMeshData {
+        GpuMeshData {
             global_model: Matrix4::identity(),
             global_inverse_model: Matrix4::identity(),
             base_color_factor: self.pbr_material.base_color_factor,
@@ -176,7 +130,9 @@ impl Mesh {
     }
 
     pub fn transparent(&self) -> bool {
-        self.transparent
+        self.pbr_material
+            .draw_flags
+            .contains(DrawFlags::TRANSPARENT)
     }
 }
 
@@ -184,6 +140,8 @@ impl Mesh {
 pub struct MeshInstance {
     pub mesh: Arc<Mesh>,
     pub material_pass_index: usize,
+    pub gpu_mesh_instance_index: usize,
+    pub scene_graph_node_index: usize,
 }
 
 impl MeshInstance {
@@ -191,13 +149,45 @@ impl MeshInstance {
         Self {
             mesh,
             material_pass_index,
+            gpu_mesh_instance_index: usize::MAX,
+            scene_graph_node_index: usize::MAX,
+        }
+    }
+
+    pub fn new_with_indices(
+        mesh: Arc<Mesh>,
+        material_pass_index: usize,
+        gpu_mesh_instance_index: usize,
+        scene_graph_node_index: usize,
+    ) -> Self {
+        Self {
+            mesh,
+            material_pass_index,
+            gpu_mesh_instance_index,
+            scene_graph_node_index,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MeshInstanceDraw {
+    pub mesh_instance: Arc<MeshInstance>,
+    // pub material_pass_index: usize,
+}
+
+impl MeshInstanceDraw {
+    pub fn new(mesh_instance: Arc<MeshInstance>, material_pass_index: usize) -> Self {
+        Self {
+            mesh_instance,
+            // material_pass_index,
         }
     }
 }
 
 /// Mesh material data
 #[derive(Clone, Copy)]
-pub struct GPUMeshData {
+#[repr(C)]
+pub struct GpuMeshData {
     pub global_model: Matrix4<f32>,
     pub global_inverse_model: Matrix4<f32>,
 
@@ -212,33 +202,9 @@ pub struct GPUMeshData {
     // pub flags: u32,
 }
 
-impl GPUMeshData {
+impl GpuMeshData {
     pub fn set_matrices_from_scene_graph(&mut self, mesh: &Mesh, scene_graph: &scene::Graph) {
         self.global_model = scene_graph.global_matrices[mesh.scene_graph_node_index];
         self.global_inverse_model = self.global_model.try_inverse().unwrap();
-    }
-}
-
-/// Per frame uniform data
-#[derive(Clone, Copy)]
-pub struct GPUSceneUniformData {
-    pub view: Matrix4<f32>,
-    pub projection: Matrix4<f32>,
-    pub eye_position: Vector4<f32>,
-    pub light_position: Vector4<f32>,
-    pub light_range: f32,
-    pub light_intensity: f32,
-}
-
-impl GPUSceneUniformData {
-    pub fn new() -> Self {
-        Self {
-            view: Matrix4::identity(),
-            projection: Matrix4::identity(),
-            eye_position: Vector4::identity(),
-            light_position: Vector4::new(-1.5, 2.5, -0.5, 1.0),
-            light_range: 0.0,
-            light_intensity: 0.0,
-        }
     }
 }

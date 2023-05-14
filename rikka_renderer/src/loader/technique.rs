@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_derive::{Deserialize, Serialize};
 
 use rikka_core::vk;
@@ -7,7 +7,7 @@ use rikka_graph::graph::*;
 
 use crate::renderer::*;
 
-// XXX: Put some of these types in the GPU layer instead of using raw (unserializable) vulkan types
+// XXX: Put some of these types in the Gpu layer instead of using raw (unserializable) vulkan types
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum VertexStreamRate {
@@ -220,7 +220,8 @@ impl Pipeline {
         } else {
             desc = desc.set_rendering_state(
                 render_graph
-                    .access_node_by_name(self.render_pass.as_str())?
+                    .access_node_by_name(self.render_pass.as_str())
+                    .context("Failed to access render graph node rendering state")?
                     .rendering_state
                     .clone()
                     .unwrap(),
@@ -248,10 +249,11 @@ pub struct Technique {
 impl Technique {
     pub fn into_render_technique_desc(
         self,
+        // XXX: Only swapchain is info, there is no need to pass the whole renderer object reference
         renderer: &Renderer,
         render_graph: &Graph,
     ) -> Result<RenderTechniqueDesc> {
-        let mut desc = RenderTechniqueDesc::new();
+        let mut desc = RenderTechniqueDesc::new(self.name);
 
         for pipeline in self.pipelines {
             desc = desc.add_graphics_pipeline(

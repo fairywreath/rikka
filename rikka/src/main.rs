@@ -7,6 +7,7 @@ use winit::{
     dpi,
     event::*,
     event_loop::{ControlFlow, EventLoop},
+    platform::windows::WindowBuilderExtWindows,
     window::WindowBuilder,
 };
 
@@ -33,6 +34,7 @@ fn main() {
         .with_title("Rikka Engine")
         .with_inner_size(dpi::PhysicalSize::new(1920, 1200))
         .with_position(dpi::PhysicalPosition::new(100, 100))
+        // .with_resizable(false)
         .build(&event_loop)
         .unwrap();
 

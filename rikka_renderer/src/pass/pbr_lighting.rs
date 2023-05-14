@@ -6,7 +6,10 @@ use rikka_core::vk;
 use rikka_gpu::{buffer::*, command_buffer::CommandBuffer, descriptor_set::*};
 use rikka_graph::{graph::Graph, types::*};
 
-use crate::{renderer::*, scene_renderer::types::*};
+use crate::{
+    renderer::*,
+    scene_renderer::{material::*, mesh::*},
+};
 
 pub struct PBRLightingPass {
     /// Fullscreen mesh
@@ -28,7 +31,7 @@ impl PBRLightingPass {
         // XXX: Use dynamic uniform buffer
         let material_buffer_desc = BufferDesc::new()
             .set_usage_flags(vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER)
-            .set_size(size_of::<GPUMeshData> as u32)
+            .set_size(size_of::<GpuMeshData> as u32)
             .set_device_only(false);
         let material_buffer = renderer.create_buffer(material_buffer_desc)?;
 
@@ -66,7 +69,7 @@ impl PBRLightingPass {
         Ok(Self { mesh })
     }
 
-    /// Copies mesh data to the GPU buffer
+    /// Copies mesh data to the Gpu buffer
     pub fn upload_data_to_gpu(&self) -> Result<()> {
         self.mesh
             .pbr_material
@@ -91,6 +94,10 @@ impl RenderPass for PBRLightingPass {
         );
         command_buffer.draw(3, 1, 0, 0);
 
+        Ok(())
+    }
+
+    fn post_render(&self, command_buffer: &CommandBuffer, graph: &Graph) -> Result<()> {
         Ok(())
     }
 

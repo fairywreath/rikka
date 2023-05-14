@@ -80,6 +80,11 @@ impl HubGuard {
     }
 }
 
+impl Drop for HubGuard {
+    fn drop(&mut self) {
+        // log::trace!("Hub guard ref count: {}", Arc::strong_count(&self.hub));
+    }
+}
 #[derive(Clone)]
 pub struct DeviceGuard {
     device: Arc<Device>,
@@ -101,6 +106,15 @@ impl Deref for DeviceGuard {
     type Target = Device;
     fn deref(&self) -> &Self::Target {
         &self.device
+    }
+}
+
+impl Drop for DeviceGuard {
+    fn drop(&mut self) {
+        // log::trace!(
+        //     "Device guard ref count: {}",
+        //     Arc::strong_count(&self.device)
+        // );
     }
 }
 

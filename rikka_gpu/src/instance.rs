@@ -37,7 +37,7 @@ impl Instance {
 
         let validation_features = vec![
             // This feature is broken.
-            // vk::ValidationFeatureEnableEXT::GPU_ASSISTED,
+            // vk::ValidationFeatureEnableEXT::Gpu_ASSISTED,
             vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
             vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
         ];

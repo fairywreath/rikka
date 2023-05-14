@@ -271,6 +271,39 @@ impl Barriers {
         self
     }
 
+    pub fn add_image_with_subresource_range(
+        mut self,
+        image: &Image,
+        old_state: ResourceState,
+        new_state: ResourceState,
+        base_mip_level: u32,
+        level_count: u32,
+        aspect_mask: vk::ImageAspectFlags,
+    ) -> Self {
+        let subresource_range = vk::ImageSubresourceRange::builder()
+            .base_mip_level(base_mip_level)
+            .level_count(level_count)
+            .aspect_mask(aspect_mask)
+            .base_array_layer(0)
+            .layer_count(1)
+            .build();
+
+        self.add_image_from_vulkan_parameters(
+            old_state.into(),
+            determine_pipeline_flags_from_access_flags(old_state.into(), QueueType::Graphics),
+            new_state.into(),
+            determine_pipeline_flags_from_access_flags(new_state.into(), QueueType::Graphics),
+            old_state.into(),
+            new_state.into(),
+            image.raw(),
+            subresource_range,
+            vk::QUEUE_FAMILY_IGNORED,
+            vk::QUEUE_FAMILY_IGNORED,
+        );
+
+        self
+    }
+
     pub fn add_image_from_vulkan_parameters(
         &mut self,
         src_access_mask: vk::AccessFlags2,

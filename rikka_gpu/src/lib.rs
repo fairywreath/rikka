@@ -20,6 +20,7 @@ mod device;
 mod factory;
 mod frame;
 mod instance;
+mod mesh_shader;
 mod physical_device;
 mod query;
 mod queue;

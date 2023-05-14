@@ -1,4 +1,6 @@
 use anyhow::Result;
+use parking_lot::Mutex;
+
 use rikka_core::vk;
 
 use crate::{

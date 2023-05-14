@@ -129,6 +129,18 @@ impl Graph {
         sorted_nodes.reverse();
         self.nodes = sorted_nodes;
 
+        log::info!("Render graph render pass order:");
+        for order in 0..self.nodes.len() {
+            log::info!(
+                "{}: {}",
+                order,
+                self.builder
+                    .access_node_by_handle(&self.nodes[order])?
+                    .name
+                    .as_str()
+            );
+        }
+
         // Calculate ref counts of output->input resources
         for node_handle in &self.nodes {
             let enabled = self.builder.access_node_by_handle(&node_handle)?.enabled;
@@ -198,7 +210,7 @@ impl Graph {
 
                             let image = gpu.create_image(image_desc)?;
                             log::trace!(
-                                "Created GPU image for node output {} with bindless index {}",
+                                "Created Gpu image for node output {} with bindless index {}",
                                 resource_name,
                                 image.bindless_index()
                             );
@@ -392,8 +404,12 @@ impl Graph {
             if let Some(render_pass) = &node.render_pass {
                 // render_pass.pre_render(command_buffer)?;
                 command_buffer.begin_rendering(node.rendering_state.as_ref().unwrap().clone());
+
                 render_pass.render(command_buffer)?;
+
                 command_buffer.end_rendering();
+
+                render_pass.post_render(command_buffer, self)?;
             }
         }
 
@@ -416,6 +432,10 @@ impl Graph {
 
     pub fn access_resource_by_handle(&self, handle: ResourceHandle) -> Result<&Resource> {
         self.builder.access_resource_by_handle(&handle)
+    }
+
+    pub fn access_resource_by_name(&self, name: &str) -> Result<&Resource> {
+        self.builder.access_resource_by_name(name)
     }
 
     pub fn access_node_by_name(&self, name: &str) -> Result<&Node> {

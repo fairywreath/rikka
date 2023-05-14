@@ -153,7 +153,7 @@ impl Image {
             .context("Failed to create vulkan image")?;
         let requirements = device.raw().get_image_memory_requirements(raw);
 
-        // XXX: Always GPU only (and use staging buffer to copy)?
+        // XXX: Always Gpu only (and use staging buffer to copy)?
         // let memory_location = MemoryLocation::GpuOnly;
 
         let allocation = allocator.lock().allocate(&AllocationCreateDesc {
@@ -299,11 +299,14 @@ impl Image {
     }
 
     pub fn linked_sampler(&self) -> Option<Handle<Sampler>> {
+        // XXX FIXME: Linked sampler will have to hold a guard, but the internally stored sampler reference does not
         self.sampler.read().clone()
     }
 
     pub fn set_linked_sampler(&self, sampler: Handle<Sampler>) {
-        *self.sampler.write() = Some(sampler);
+        unsafe {
+            *self.sampler.write() = Some(Handle::new_no_guard_from_arc(sampler.inner));
+        }
     }
 
     pub fn width(&self) -> u32 {

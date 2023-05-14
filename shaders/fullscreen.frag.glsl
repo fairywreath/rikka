@@ -7,7 +7,7 @@ layout(location = 1) flat in uint textureId;
 
 layout(location = 0) out vec4 out_FragColor;
 
-layout(set = 0, binding = 10) uniform sampler2D globalTextures[];
+layout(set = 0, binding = 15) uniform sampler2D globalTextures[];
 
 void main()
 {

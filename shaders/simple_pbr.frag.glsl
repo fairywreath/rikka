@@ -40,8 +40,8 @@ layout(std140, binding = 1) uniform MeshUniform
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
-layout(set = 1, binding = 10) uniform sampler2D globalTextures[];
-// layout(set = 1, binding = 10) uniform sampler3D globalTextures3D[];
+layout(set = 1, binding = 15) uniform sampler2D globalTextures[];
+// layout(set = 1, binding = 15) uniform sampler3D globalTextures3D[];
 
 #define PI 3.1415926535897932384626433832795
 
@@ -147,9 +147,9 @@ void main()
 
     vec3 material_color = mix(fresnel_mix, conductor_fresnel, metalness);
     material_color.rgb = encode_srgb(material_color.rgb);
-    out_FragColor = vec4(material_color, base_color.a);
+    // out_FragColor = vec4(material_color, base_color.a);
 
-    // out_FragColor = diffuseTexture;
+    out_FragColor = diffuseTexture;
 
     // out_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     // out_FragColor = vec4(0.0, diffuseTextureIndex, 0.0, 1.0);

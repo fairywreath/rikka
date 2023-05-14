@@ -8,6 +8,8 @@ use rikka_gpu::{
     buffer::Buffer, command_buffer::CommandBuffer, escape::Handle, image::Image, types::*,
 };
 
+use crate::graph::Graph;
+
 // XXX: Use a better typestate system
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -136,7 +138,7 @@ impl Resource {
             .context("Resource is not an image")?
             .image
             .clone()
-            .context("Image resource does not contain a GPU image handle")
+            .context("Image resource does not contain a Gpu image handle")
     }
 
     pub fn gpu_image_bindless_index(&self) -> Result<u32> {
@@ -181,10 +183,12 @@ pub struct NodeDesc {
 }
 
 pub trait RenderPass {
-    // XXX: These might have to be mut :)
     // fn pre_render(&self, command_buffer: &CommandBuffer) -> Result<()>;
     fn render(&self, command_buffer: &CommandBuffer) -> Result<()>;
+    fn post_render(&self, command_buffer: &CommandBuffer, graph: &Graph) -> Result<()>;
+
     // fn resize(&self, width: u32, height: u32) -> Result<()>;
+
     fn name(&self) -> &str;
 }
 

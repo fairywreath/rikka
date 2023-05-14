@@ -6,7 +6,7 @@ use rikka_core::{nalgebra::Vector4, vk};
 use rikka_gpu::{buffer::*, command_buffer::CommandBuffer, descriptor_set::*};
 use rikka_graph::{graph::Graph, types::*};
 
-use crate::{renderer::*, scene_renderer::types::*};
+use crate::{renderer::*, scene_renderer::mesh::*};
 
 pub struct SimplePbrPass {
     mesh_instances: Vec<MeshInstance>,
@@ -81,6 +81,10 @@ impl RenderPass for SimplePbrRenderPass {
             mesh.draw(command_buffer, graphics_pipeline, &self.zero_buffer);
         }
 
+        Ok(())
+    }
+
+    fn post_render(&self, command_buffer: &CommandBuffer, graph: &Graph) -> Result<()> {
         Ok(())
     }
 

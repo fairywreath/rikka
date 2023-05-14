@@ -111,7 +111,7 @@ impl<T> Drop for Terminal<T> {
 }
 
 pub struct Handle<T> {
-    inner: Arc<Escape<T>>,
+    pub(crate) inner: Arc<Escape<T>>,
     guard: Option<HubGuard>,
 }
 
@@ -132,11 +132,22 @@ impl<T> Handle<T> {
         }
     }
 
+    pub fn new_from_arc(inner: Arc<Escape<T>>, guard: HubGuard) -> Self {
+        Self {
+            inner,
+            guard: Some(guard),
+        }
+    }
+
     pub unsafe fn new_no_guard(value: Escape<T>) -> Self {
         Self {
             inner: Arc::new(value),
             guard: None,
         }
+    }
+
+    pub unsafe fn new_no_guard_from_arc(inner: Arc<Escape<T>>) -> Self {
+        Self { inner, guard: None }
     }
 }
 

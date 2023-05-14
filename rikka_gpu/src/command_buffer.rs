@@ -4,8 +4,9 @@ use anyhow::{anyhow, Result};
 use rikka_core::vk;
 
 use crate::{
-    barriers::*, buffer::*, constants, descriptor_set::DescriptorSet, device::Device,
-    factory::DeviceGuard, frame::FrameThreadPoolsManager, image::*, pipeline::*, types::*,
+    barriers::*, buffer::*, constants, descriptor_set::DescriptorSet, factory::DeviceGuard,
+    frame::FrameThreadPoolsManager, image::*, mesh_shader::MeshShaderContext, pipeline::*,
+    types::*,
 };
 
 // XXX: Use a better typestate system
@@ -282,6 +283,10 @@ pub struct CommandBuffer {
 
     // pub(crate) is_recording: bool,
     pub(crate) is_secondary: bool,
+
+    mesh_shader: MeshShaderContext,
+
+    // XXX: This is not used, can remove?
     meta_data: CommandBufferMetaData,
     // Reference to pipeline?
     // pipeline: vk::Pipeline,
@@ -298,6 +303,7 @@ impl CommandBuffer {
     ) -> Self {
         Self {
             device: device.clone(),
+            mesh_shader: MeshShaderContext::new(device),
             raw: command_buffer,
             // is_recording: false,
             is_secondary,
@@ -507,6 +513,14 @@ impl CommandBuffer {
         }
     }
 
+    pub fn draw_indirect(&self, buffer: &Buffer, offset: u64, draw_count: u32, stride: u32) {
+        unsafe {
+            self.device
+                .raw()
+                .cmd_draw_indirect(self.raw, buffer.raw(), offset, draw_count, stride)
+        }
+    }
+
     pub fn draw_indexed(
         &self,
         index_count: u32,
@@ -525,6 +539,122 @@ impl CommandBuffer {
                 first_instance,
             );
         }
+    }
+
+    pub fn draw_indirect_count(
+        &self,
+        buffer: &Buffer,
+        buffer_offset: u64,
+        count_buffer: &Buffer,
+        count_buffer_offset: u64,
+        max_draw_count: u32,
+        stride: u32,
+    ) {
+        unsafe {
+            self.device.raw().cmd_draw_indirect_count(
+                self.raw,
+                buffer.raw(),
+                buffer_offset,
+                count_buffer.raw(),
+                count_buffer_offset,
+                max_draw_count,
+                stride,
+            )
+        }
+    }
+
+    pub fn draw_indexed_indirect(
+        &self,
+        buffer: &Buffer,
+        offset: u64,
+        draw_count: u32,
+        stride: u32,
+    ) {
+        unsafe {
+            self.device.raw().cmd_draw_indexed_indirect(
+                self.raw,
+                buffer.raw(),
+                offset,
+                draw_count,
+                stride,
+            )
+        }
+    }
+
+    pub fn draw_indexed_indirect_count(
+        &self,
+        buffer: &Buffer,
+        buffer_offset: u64,
+        count_buffer: &Buffer,
+        count_buffer_offset: u64,
+        max_draw_count: u32,
+        stride: u32,
+    ) {
+        unsafe {
+            self.device.raw().cmd_draw_indexed_indirect_count(
+                self.raw,
+                buffer.raw(),
+                buffer_offset,
+                count_buffer.raw(),
+                count_buffer_offset,
+                max_draw_count,
+                stride,
+            )
+        }
+    }
+
+    pub fn draw_mesh_tasks(&self, task_count: u32, first_task: u32) {
+        unsafe {
+            self.mesh_shader
+                .functions
+                .cmd_draw_mesh_tasks(self.raw, task_count, first_task);
+        }
+    }
+
+    pub fn draw_mesh_tasks_indirect(
+        &self,
+        buffer: &Buffer,
+        offset: u64,
+        draw_count: u32,
+        stride: u32,
+    ) {
+        unsafe {
+            self.mesh_shader.functions.cmd_draw_mesh_tasks_indirect(
+                self.raw,
+                buffer.raw(),
+                offset,
+                draw_count,
+                stride,
+            )
+        }
+    }
+
+    pub fn draw_mesh_tasks_indirect_count(
+        &self,
+        buffer: &Buffer,
+        buffer_offset: u64,
+        count_buffer: &Buffer,
+        count_buffer_offset: u64,
+        max_draw_count: u32,
+        stride: u32,
+    ) {
+        unsafe {
+            self.mesh_shader
+                .functions
+                .cmd_draw_mesh_tasks_indirect_count(
+                    self.raw,
+                    buffer.raw(),
+                    buffer_offset,
+                    count_buffer.raw(),
+                    count_buffer_offset,
+                    max_draw_count,
+                    stride,
+                )
+        }
+    }
+
+    pub fn set_viewport(&self) {
+        todo!()
     }
 
     pub fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {

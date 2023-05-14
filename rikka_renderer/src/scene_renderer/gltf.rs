@@ -10,7 +10,12 @@ use rikka_core::{
 };
 use rikka_gpu::{buffer::*, descriptor_set::*, escape::Handle, gpu::Gpu, image::*, sampler::*};
 
-use crate::{loader::asynchronous::*, renderer::*, scene, scene_renderer::types::*};
+use crate::{
+    loader::asynchronous::*,
+    renderer::*,
+    scene,
+    scene_renderer::{material::*, mesh::*},
+};
 
 pub struct GltfScene {
     pub meshes: Vec<Mesh>,
@@ -85,7 +90,7 @@ impl GltfScene {
         }
 
         let image = renderer.create_image(image_desc)?;
-        // XXX: Do this internally in the GPU
+        // XXX: Do this internally in the Gpu
         renderer
             .gpu_mut()
             .add_bindless_image_update(rikka_gpu::types::ImageResourceUpdate {
@@ -191,7 +196,7 @@ impl GltfScene {
         Ok(buffers_data)
     }
 
-    /// Creates GPU buffers based on buffer views
+    /// Creates Gpu buffers based on buffer views
     fn load_buffer_views(
         renderer: &mut Renderer,
         buffer_views: gltf::iter::Views,
@@ -227,7 +232,7 @@ impl GltfScene {
                 .gpu_mut()
                 .copy_buffer(&staging_buffer, &gpu_buffer)?;
 
-            gpu_buffers.push(Handle::from(gpu_buffer));
+            gpu_buffers.push(gpu_buffer);
         }
 
         Ok(gpu_buffers)
@@ -245,12 +250,12 @@ impl GltfScene {
         // XXX: Use dynamic uniform buffer?
         let material_buffer_desc = BufferDesc::new()
             .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .set_size(size_of::<GPUMeshData>() as _)
+            .set_size(size_of::<GpuMeshData>() as _)
             .set_device_only(false);
         // log::info!("Material buffer size: {}", material_buffer_desc.size);
         let material_buffer = renderer.create_buffer(material_buffer_desc)?;
 
-        // let mesh_data = GPUMeshData {
+        // let mesh_data = GpuMeshData {
         //     diffuse_texture_index: 3,
         //     metallic_roughness_texture_index: 3,
         //     normal_texture_index: 3,
@@ -281,8 +286,10 @@ impl GltfScene {
         if let Some(sampler_index) = gltf_texture.sampler().index() {
             image.set_linked_sampler(gpu_samplers[sampler_index].clone());
         } else {
-            // XXX: Create mew sampler here? or use default GPU sampler?
-            todo!()
+            // image.set_linked_sampler(gpu_samplers[sampler_index].clone());
+            // XXX: Create mew sampler here? or use default Gpu sampler?
+            // todo!()
+            // image.set_linked_sampler()
         }
 
         image
@@ -449,6 +456,14 @@ impl GltfScene {
             let transform_matrix = Matrix4::from(node.transform().matrix());
             scene_graph.set_local_matrix(node.index(), transform_matrix);
 
+            // log::trace!(
+            //     "Processing scene node {}, local transform {:#?}, level {}",
+            //     node.name().unwrap_or("no node name"),
+            //     1,
+            //     // transform_matrix,
+            //     scene_graph.nodes_hierarchy[node.index()].level
+            // );
+
             for child in node.children() {
                 scene_graph.set_hierarchy(
                     child.index(),
@@ -456,6 +471,10 @@ impl GltfScene {
                     scene_graph.nodes_hierarchy[node.index()].level + 1,
                 );
                 nodes_to_visit.push_back(child);
+            }
+
+            if node.mesh().is_none() {
+                continue;
             }
 
             let gltf_mesh = node.mesh().unwrap();
@@ -499,9 +518,11 @@ impl GltfScene {
                     mesh.tex_coords_buffer = Some(gpu_buffers[buffer_view.index()].clone());
                     mesh.tex_coords_offset = tex_coords_accessor.offset() as _;
                 } else {
-                    return Err(anyhow!(
-                        "glTF texture coordinates 0 accessor does not exist!"
-                    ));
+                    // XXX FIXME: Currently assign buffer 0 as the tex coord gpu buffer if the primitive does not use texcoords at all. Handle this better
+                    mesh.tex_coords_buffer = Some(gpu_buffers[0].clone());
+                    // return Err(anyhow!(
+                    //     "glTF texture coordinates 0 accessor does not exist!"
+                    // ));
                 }
 
                 if let Some(normals_accessor) = primitive.get(&gltf::Semantic::Normals) {
@@ -517,10 +538,19 @@ impl GltfScene {
                     mesh.tangent_buffer = Some(gpu_buffers[buffer_view.index()].clone());
                     mesh.tangent_offset = tangents_accessor.offset() as _;
                 } else {
-                    log::info!("Does not contain tangents! index {}", primitive.index());
+                    // log::info!("Does not contain tangents! index {}", primitive.index());
                 }
 
                 mesh.scene_graph_node_index = node.index();
+
+                // log::trace!(
+                //     "Processing scene mesh node {}, local transform {:#?}, level {}",
+                //     node.name().unwrap_or("no node name"),
+                //     // 1,
+                //     // transform_matrix,
+                //     node.index(),
+                //     scene_graph.nodes_hierarchy[node.index()].level
+                // );
 
                 meshes.push(mesh);
             }

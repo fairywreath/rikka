@@ -1,0 +1,35 @@
+{
+    "name": "pbr_lighting",
+    "pipelines": [
+        {
+            "name": "pbr_lighting",
+            "render_pass": "simple_pbr_pass",
+            "shaders": [
+                {
+                    "shader_type": "Vertex",
+                    "file_name": "shaders/pbr/pbr.vert"
+                },
+                {
+                    "shader_type": "Fragment",
+                    "file_name": "shaders/pbr/pbr.frag"
+                }
+            ],
+            "vertex_inputs": [
+                {
+                    "attribute_location": 0,
+                    "attribute_binding": 0,
+                    "attribute_offset": 0,
+                    "attribute_format": 106,
+                    "stream_binding": 0,
+                    "stream_stride": 12,
+                    "stream_rate": "Vertex"
+                }
+            ],
+            "depth_state": {
+                "write_enable": false,
+                "test_enable": false,
+                "compare_op": "Never"
+            }
+        }
+    ]
+}

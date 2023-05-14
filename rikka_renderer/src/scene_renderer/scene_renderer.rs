@@ -1,18 +1,25 @@
-use std::{collections::HashMap, mem::size_of, sync::Arc};
+use std::{mem::size_of, sync::Arc};
 
 use anyhow::{Context, Result};
+use parking_lot::RwLock;
 use serde_derive::{Deserialize, Serialize};
 
-use rikka_core::vk;
-use rikka_gpu::{barriers::*, buffer::*, descriptor_set::*, gpu::Gpu, image::Image, types::*};
-use rikka_graph::{graph::Graph, types::Resource};
+use rikka_core::{
+    nalgebra::{Matrix4, Vector4},
+    vk,
+};
+use rikka_gpu::{
+    barriers::*, buffer::*, constants::MAX_FRAMES, descriptor_set::*, gpu::Gpu, image::Image,
+    types::*,
+};
+use rikka_graph::graph::Graph;
 
 use crate::{
     loader::asynchronous::AsynchronousLoader,
-    pass::{depth_of_field::*, depth_pre::*, gbuffer::*, pbr_lighting::*, simple_pbr::*},
+    pass::simple_pbr::*,
     renderer::*,
     scene,
-    scene_renderer::{gltf::*, types::*},
+    scene_renderer::{gltf::*, mesh::*, meshlet::*},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -33,25 +40,125 @@ struct RenderTechniqeFilePaths(&'static str);
 impl RenderTechniqeFilePaths {
     const FULLSCREEN: &str = "data/fullscreen.json";
     const SIMPLE_PBR: &str = "data/simple_pbr.json";
+    const DEFERRED_MESH_SHADER: &str = "data/deferred_mesh_shader.json";
 }
 
-// const FINAL_IMAGE_NODE_NAME: &str = "final";
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct GpuSceneUniformData {
+    pub view: Matrix4<f32>,
+    pub projection: Matrix4<f32>,
+
+    pub eye_position: Vector4<f32>,
+
+    pub light_position: Vector4<f32>,
+    pub light_range: f32,
+    pub light_intensity: f32,
+}
+impl GpuSceneUniformData {
+    pub fn new() -> Self {
+        Self {
+            view: Matrix4::identity(),
+            projection: Matrix4::identity(),
+            eye_position: Vector4::identity(),
+            light_position: Vector4::new(-1.5, 2.5, -0.5, 1.0),
+            light_range: 0.0,
+            light_intensity: 0.0,
+        }
+    }
+}
+
+struct GpuMeshDrawCounts {}
+
+/// Shared render context and resources
+#[derive(Clone)]
+pub struct RenderContext {
+    // Gpu buffers
+    pub scene_uniform_buffer: Handle<Buffer>,
+
+    pub meshes_storage_buffer: Handle<Buffer>,
+    pub mesh_bounds_storage_buffer: Handle<Buffer>,
+    pub mesh_instances_storage_buffer: Handle<Buffer>,
+
+    pub meshlets_storage_buffer: Handle<Buffer>,
+    pub meshlets_vertex_positions_storage_buffer: Handle<Buffer>,
+    pub meshlets_vertex_data_storage_buffer: Handle<Buffer>,
+    pub meshlets_data_storage_buffer: Handle<Buffer>,
+
+    // Gpu indirect data
+    pub mesh_task_indirect_count_early_storage_buffer: Vec<Handle<Buffer>>,
+    pub mesh_task_indirect_early_commands_storage_buffer: Vec<Handle<Buffer>>,
+    pub mesh_task_indirect_culled_commands_storage_buffer: Vec<Handle<Buffer>>,
+    pub mesh_task_indirect_count_late_storage_buffer: Vec<Handle<Buffer>>,
+    pub mesh_task_indirect_late_commands_storage_buffer: Vec<Handle<Buffer>>,
+
+    // Mesh shader descriptor sets
+    pub mesh_shader_early_descriptor_sets: [Arc<DescriptorSet>; MAX_FRAMES as usize],
+    pub mesh_shader_late_descriptor_sets: [Arc<DescriptorSet>; MAX_FRAMES as usize],
+
+    current_frame: Arc<RwLock<usize>>,
+    pub mesh_instances: Vec<MeshInstanceDraw>,
+}
+
+impl RenderContext {
+    pub fn current_frame(&self) -> usize {
+        self.current_frame.read().clone()
+    }
+
+    pub fn mesh_count(&self) -> usize {
+        self.mesh_instances.len()
+    }
+}
 
 pub struct SceneRenderer {
     renderer: Renderer,
     render_graph: Graph,
 
-    meshes: Vec<Arc<Mesh>>,
     scene_graph: scene::Graph,
 
-    final_image: Handle<Image>,
+    // Mesh data
+    meshes: Vec<Arc<Mesh>>,
+    // mesh_instances: Vec<MeshInstance>,
+    // gltf_mesh_to_mesh_offset: Vec<u32>,
 
+    // // Meshlet data
+    // meshlets: Vec<GpuMeshlet>,
+    // meshlets_vertex_positions: Vec<GpuMeshletVertexPosition>,
+    // meshlets_vertex_data: Vec<GpuMeshletVertexData>,
+    // meshlets_data: Vec<u32>,
+
+    // mesh_draw_counts: GpuMeshDrawCounts,
+
+    // Per-frame scene data
+    // XXX: Remove this `pub` and add accessors
+    pub scene_uniform_data: GpuSceneUniformData,
+
+    // Gpu buffers
     scene_uniform_buffer: Handle<Buffer>,
 
-    // XXX: Remove this `pub` and add accessors
-    pub scene_uniform_data: GPUSceneUniformData,
+    // meshes_storage_buffer: Handle<Buffer>,
+    // mesh_bounds_storage_buffer: Handle<Buffer>,
+    // mesh_instances_storage_buffer: Handle<Buffer>,
 
+    // meshlets_storage_buffer: Handle<Buffer>,
+    // meshlets_vertex_positions_storage_buffer: Handle<Buffer>,
+    // meshlets_vertex_data_storage_buffer: Handle<Buffer>,
+    // meshlets_data_storage_buffer: Handle<Buffer>,
+
+    // // Gpu indirect data
+    // mesh_task_indirect_count_early_storage_buffer: Vec<Handle<Buffer>>,
+    // mesh_task_indirect_early_commands_storage_buffer: Vec<Handle<Buffer>>,
+    // mesh_task_indirect_culled_commands_storage_buffer: Vec<Handle<Buffer>>,
+    // mesh_task_indirect_count_late_storage_buffer: Vec<Handle<Buffer>>,
+    // mesh_task_indirect_late_commands_storage_buffer: Vec<Handle<Buffer>>,
+
+    // // Mesh shader descriptor sets
+    // mesh_shader_early_descriptor_set: Arc<DescriptorSet>,
+    // mesh_shader_late_descriptor_set: Arc<DescriptorSet>,
+
+    // Fullscreen pass
     fullscreen_technique: Arc<RenderTechnique>,
+    final_image: Handle<Image>,
 
     // Render passes
     // pbr_lighting_pass: PBRLightingPass,
@@ -59,8 +166,8 @@ pub struct SceneRenderer {
     // depth_pre_pass: DepthPrePass,
 
     // One-pass PBR
-    simple_pbr_render_technique: Arc<RenderTechnique>,
     simple_pbr_pass: SimplePbrPass,
+    simple_pbr_render_technique: Arc<RenderTechnique>,
 }
 
 impl SceneRenderer {
@@ -86,12 +193,12 @@ impl SceneRenderer {
 
         // Setup per-frame uniform buffer
         let scene_uniform_buffer_desc = BufferDesc::new()
-            .set_size(size_of::<GPUSceneUniformData>() as _)
+            .set_size(size_of::<GpuSceneUniformData>() as _)
             .set_device_only(false)
             .set_usage_flags(vk::BufferUsageFlags::UNIFORM_BUFFER);
         let scene_uniform_buffer = renderer.create_buffer(scene_uniform_buffer_desc)?;
 
-        let scene_uniform_data = GPUSceneUniformData::new();
+        let scene_uniform_data = GpuSceneUniformData::new();
         scene_uniform_buffer.copy_data_to_buffer(&[scene_uniform_data])?;
 
         // Main render technique
@@ -146,6 +253,19 @@ impl SceneRenderer {
             ResourceState::SHADER_RESOURCE,
         )?;
 
+        // Test load mesh shader pipeline
+        let mut deferred_mesh_shader_graph =
+            rikka_graph::parser::parse_from_file("data/graphs/deferred_mesh_shader_graph.json")
+                .context("Failed to load deferred mesh shader render graph")?;
+        deferred_mesh_shader_graph.compile(renderer.gpu_mut())?;
+
+        let _deferred_mesh_shader_technique = renderer
+            .create_technique_from_file(
+                RenderTechniqeFilePaths::DEFERRED_MESH_SHADER,
+                &deferred_mesh_shader_graph,
+            )
+            .context("Failed to load deferred mesh shader technique")?;
+
         Ok(Self {
             renderer,
             render_graph,
@@ -181,6 +301,8 @@ impl SceneRenderer {
         for mesh in &self.meshes {
             let mut mesh_data = mesh.create_gpu_data();
             mesh_data.set_matrices_from_scene_graph(mesh, &self.scene_graph);
+            // mesh_data.global_model = Matrix4::identity();
+            // mesh_data.global_model = Matrix4::new_scaling(0.1) * mesh_data.global_model;
             mesh.pbr_material
                 .material_buffer
                 .copy_data_to_buffer(&[mesh_data])?;
@@ -269,7 +391,7 @@ impl SceneRenderer {
         self.renderer
             .gpu_mut()
             .update_image_transitions(0)
-            .expect("Failed to update GPU image transitions");
+            .expect("Failed to update Gpu image transitions");
 
         self.renderer.end_frame()?;
 
